@@ -81,6 +81,7 @@ $(LLAMA_BUILD_TARGETS): $(LLAMA_BUILD_DIR)
 
 
 $(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(LLAMA_BUILD_TARGETS) $(prefix)
+	ls dist/.llama
 	gcc \
 		-fPIC -shared \
 		-Ivendor/sqlite \
