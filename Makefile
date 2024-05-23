@@ -60,7 +60,13 @@ static: $(TARGET_STATIC)
 
 
 LLAMA_BUILD_DIR=$(prefix)/.llama
+
+ifdef CONFIG_WINDOWS
+LLAMA_BUILD_TARGETS=$(LLAMA_BUILD_DIR)/libllama.lib $(LLAMA_BUILD_DIR)/libggml_static.lib
+else
 LLAMA_BUILD_TARGETS=$(LLAMA_BUILD_DIR)/libllama.a $(LLAMA_BUILD_DIR)/libggml_static.a
+endif
+
 
 $(LLAMA_BUILD_DIR):
 	rm -rf @ || true
