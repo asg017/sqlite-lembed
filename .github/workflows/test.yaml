@@ -60,7 +60,7 @@ jobs:
       - run: ./scripts/vendor.sh
         shell: bash
       - run: make dist/.llama
-      - run: cat dist/.llama/Makefile || true
+      - run: ls dist/.llama
       - run: make loadable
       - run: pip install pytest numpy; make test-loadable
       - uses: actions/upload-artifact@v4
