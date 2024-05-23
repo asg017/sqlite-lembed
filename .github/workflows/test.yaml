@@ -59,7 +59,9 @@ jobs:
           python-version: "3.12"
       - run: ./scripts/vendor.sh
         shell: bash
-      - run: make loadable CC=gcc
+      - run: make dist/.llama
+      - run: cat dist/.llama/Makefile || true
+      - run: make loadable
       - run: pip install pytest numpy; make test-loadable
       - uses: actions/upload-artifact@v4
         with:
