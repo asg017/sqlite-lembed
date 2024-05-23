@@ -1,0 +1,12 @@
+models/
+vendor/sqlite
+
+*.gguf
+*.dylib
+ggml-metal.metal
+
+.vscode/
+
+News*.json
+sqlite-lembed.h
+dist/
