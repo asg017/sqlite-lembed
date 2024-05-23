@@ -71,7 +71,7 @@ $(LLAMA_BUILD_DIR):
 
 
 $(LLAMA_BUILD_TARGETS): $(LLAMA_BUILD_DIR)
-	make -C $(LLAMA_BUILD_DIR) ggml_static llama
+	cmake --build $(LLAMA_BUILD_DIR) -t ggml_static -t llama
 
 
 $(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(LLAMA_BUILD_TARGETS) $(prefix)
