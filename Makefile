@@ -91,3 +91,6 @@ sqlite-lembed.h: sqlite-lembed.h.tmpl VERSION
 	DATE=$(shell date -r VERSION +'%FT%TZ%z') \
 	SOURCE=$(shell git log -n 1 --pretty=format:%H -- VERSION) \
 	envsubst < $< > $@
+
+test-loadable:
+	echo 4
