@@ -62,7 +62,7 @@ static: $(TARGET_STATIC)
 LLAMA_BUILD_DIR=$(prefix)/.llama
 
 ifdef CONFIG_WINDOWS
-LLAMA_BUILD_TARGETS=$(LLAMA_BUILD_DIR)/llama.lib $(LLAMA_BUILD_DIR)/ggml_static.lib
+LLAMA_BUILD_TARGETS=$(LLAMA_BUILD_DIR)/Debug/llama.lib $(LLAMA_BUILD_DIR)/Debug/ggml_static.lib
 else
 LLAMA_BUILD_TARGETS=$(LLAMA_BUILD_DIR)/libllama.a $(LLAMA_BUILD_DIR)/libggml_static.a
 endif
