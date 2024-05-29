@@ -1,0 +1,21 @@
+[package]
+name = "sqlite-lembed"
+license = "MIT OR Apache"
+homepage = "https://alexgarcia.xyz/sqlite-lembed"
+repo = "https://github.com/asg017/sqlite-lembed"
+description = "A SQLite extension for generating text embeddings."
+authors = ["Alex Garcia"]
+
+[targets]
+github_releases = {}
+sqlpkg = {}
+spm = {}
+amalgamation = {include=["sqlite-lembed.c", "sqlite-lembed.h"]}
+
+pip = {}
+datasette = {}
+sqlite_utils = {}
+
+npm = {}
+
+gem = { module_name = "SqliteLembed" }

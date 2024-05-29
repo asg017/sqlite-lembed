@@ -106,3 +106,6 @@ test-loadable:
 FORMAT_FILES=sqlite-lembed.c
 format: $(FORMAT_FILES)
 	clang-format -i $(FORMAT_FILES)
+
+clean:
+	rm -rf dist/
