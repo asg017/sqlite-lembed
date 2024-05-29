@@ -49,6 +49,7 @@ jobs:
           name: sqlite-lembed-macos-aarch64-extension
           path: dist/*
   build-windows-x86_64-extension:
+    if: false
     runs-on: windows-2019
     steps:
       - uses: actions/checkout@v4
