@@ -81,7 +81,6 @@ $(LLAMA_BUILD_TARGETS): $(LLAMA_BUILD_DIR)
 
 
 $(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(LLAMA_BUILD_TARGETS) $(prefix)
-	ls dist/.llama/llama.dir/Debug
 	gcc \
 		-fPIC -shared \
 		-Ivendor/sqlite \
@@ -102,3 +101,8 @@ sqlite-lembed.h: sqlite-lembed.h.tmpl VERSION
 
 test-loadable:
 	echo 4
+
+
+FORMAT_FILES=sqlite-lembed.c
+format: $(FORMAT_FILES)
+	clang-format -i $(FORMAT_FILES)
