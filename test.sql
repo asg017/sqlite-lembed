@@ -1,7 +1,4 @@
 .load ./dist/lembed0
-
-select lembed_version();
-
 .load ../sqlite-vec/dist/vec0
 
 .mode box
@@ -11,8 +8,11 @@ select lembed_version();
 .timer on
 .echo on
 
+select lembed_version(), lembed_debug();
 
-INSERT INTO temp.lembed_models(key, model)
+
+
+INSERT INTO temp.lembed_models(name, model)
   select 'all-MiniLM-L6-v2', lembed_model_from_file('models/all-MiniLM-L6-v2-44eb4044.gguf');
 
 select vec_length(lembed('all-MiniLM-L6-v2', 'hello')) as embedding;
@@ -38,10 +38,10 @@ join shows as s2 on s1.rowid < s2.rowid
 order by 3;
 .exit
 
-INSERT INTO temp.lembed_models(key, model, model_options, context_options)
+INSERT INTO temp.lembed_models(name, model, model_options, context_options)
 with models as (
   select
-    column1 as key,
+    column1 as name,
     column2 as model_path
   from (VALUES
     ('nomic-1.5-f32',  'models/nomic-embed-text-v1.5.f32.gguf'),
@@ -52,8 +52,8 @@ with models as (
   )
 )
 select
-  key,
-  lembed_model_from_file(model_path),
+  name,
+  lembed_model_from_file(model_path),`
   lembed_model_options(
     'n_gpu_layers', 99
   ),
@@ -66,7 +66,7 @@ from models;
 
 select
   rowid,
-  key,
+  name,
   model,
   lembed_model_size(model)
 from temp.lembed_models;
@@ -128,7 +128,7 @@ select lembed_debug();
 --.exit
 /*
 
-INSERT INTO llama_models(key, model)
+INSERT INTO llama_models(name, model)
 VALUES ('nomic-embed-text-v1', llama_model_from_file('nomic-embed-text-v1.Q2_K.gguf'));;
 
 select llama_embed('nomic-embed-text-v1', 'my name is...');
