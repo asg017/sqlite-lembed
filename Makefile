@@ -21,11 +21,13 @@ endif
 ifdef CONFIG_DARWIN
 LOADABLE_EXTENSION=dylib
 CFLAGS+=-framework Accelerate -framework Foundation -framework Metal -framework MetalKit
+CFLAGS+=-lomp
 LLAMA_CMAKE_FLAGS+=-DLLAMA_METAL=0
 endif
 
 ifdef CONFIG_LINUX
 LOADABLE_EXTENSION=so
+CFLAGS+=-fopenmp
 LLAMA_CMAKE_FLAGS+=-DCMAKE_POSITION_INDEPENDENT_CODE=ON
 endif
 
@@ -87,7 +89,7 @@ $(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(LLAMA_BUILD_TARGETS) $(pre
 		-Ivendor/llama.cpp \
 		-O3 \
 		$(CFLAGS) \
-		-lstdc++ -lomp \
+		-lstdc++ \
 		$< $(LLAMA_BUILD_TARGETS) \
 		-o $@
 
