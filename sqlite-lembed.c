@@ -351,54 +351,6 @@ static void lembed_token_to_piece_(sqlite3_context *context, int argc,
   }
 }
 
-static void lembed_token_type(sqlite3_context *context, int argc,
-                              sqlite3_value **argv) {
-  struct llama_model *model;
-  int rc = api_model_from_name((struct Api *)sqlite3_user_data(context),
-                               (const char *)sqlite3_value_text(argv[0]),
-                               sqlite3_value_bytes(argv[0]), &model, NULL);
-
-  int32_t token = sqlite3_value_int(argv[1]);
-
-  enum llama_token_type token_type = llama_token_get_type(model, token);
-  char *result = NULL;
-  switch (token_type) {
-  case LLAMA_TOKEN_TYPE_UNDEFINED: {
-    result = "undefined";
-    break;
-  }
-  case LLAMA_TOKEN_TYPE_NORMAL: {
-    result = "normal";
-    break;
-  }
-  case LLAMA_TOKEN_TYPE_UNKNOWN: {
-    result = "unknown";
-    break;
-  }
-  case LLAMA_TOKEN_TYPE_CONTROL: {
-    result = "control";
-    break;
-  }
-  case LLAMA_TOKEN_TYPE_USER_DEFINED: {
-    result = "user_defined";
-    break;
-  }
-  case LLAMA_TOKEN_TYPE_UNUSED: {
-    result = "unused";
-    break;
-  }
-  case LLAMA_TOKEN_TYPE_BYTE: {
-    result = "byte";
-    break;
-  }
-  }
-  if (result) {
-    sqlite3_result_text(context, result, -1, SQLITE_STATIC);
-  } else {
-    sqlite3_result_null(context);
-  }
-}
-
 static void _noop(sqlite3_context *context, int argc, sqlite3_value **argv) {}
 static void ggml_test(sqlite3_context *context, int argc,
                       sqlite3_value **argv) {
@@ -776,9 +728,6 @@ static int lembed_chunksFilter(sqlite3_vtab_cursor *pVtabCursor, int idxNum,
 
     for (int j = 0; j < chunk_size; j++) {
       int32_t token = tokens[i * chunk_size + j];
-      if (llama_token_get_type(model, token) != LLAMA_TOKEN_TYPE_NORMAL) {
-        continue;
-      }
       int32_t piece_len_neg =
           llama_token_to_piece(model, token, NULL, 0, false);
       // printf("%d\n", piece_len_neg);
@@ -934,7 +883,6 @@ __declspec(dllexport)
     {"lembed",                 lembed,                    2},
     {"lembed_tokenize_json",   lembed_tokenize_json,      2},
     {"lembed_token_score",     lembed_token_score,        2},
-    {"lembed_token_type",      lembed_token_type,         2},
     {"lembed_token_to_piece",  lembed_token_to_piece_,    2},
     {"lembed_model_size",      lembed_model_size,         1},
     {"lembed_model_from_file", lembed_model_from_file,    1},
@@ -942,11 +890,11 @@ __declspec(dllexport)
     {"lembed_context_options", lembed_context_options_,   -1},
     // clang-format on
   };
-  for (unsigned long i = 0;i < sizeof(aFunc) / sizeof(aFunc[0]) && rc == SQLITE_OK; i++) {
-    rc = sqlite3_create_function_v2(db, aFunc[i].zFName, aFunc[i].nArg, DEFAULT_FLAGS, a, aFunc[i].xFunc, NULL, NULL, NULL);
+  for (unsigned long i = 0;i < sizeof(aFuncApi) / sizeof(aFuncApi[0]) && rc == SQLITE_OK; i++) {
+    rc = sqlite3_create_function_v2(db, aFuncApi[i].zFName, aFuncApi[i].nArg, DEFAULT_FLAGS, a, aFuncApi[i].xFunc, NULL, NULL, NULL);
     if (rc != SQLITE_OK) {
       *pzErrMsg = sqlite3_mprintf("Error creating function %s: %s",
-                                  aFunc[i].zFName, sqlite3_errmsg(db));
+                                  aFuncApi[i].zFName, sqlite3_errmsg(db));
       return rc;
     }
   }

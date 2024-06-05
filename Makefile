@@ -87,7 +87,7 @@ $(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(LLAMA_BUILD_TARGETS) $(pre
 		-Ivendor/llama.cpp \
 		-O3 \
 		$(CFLAGS) \
-		-lstdc++ \
+		-lstdc++ -lomp \
 		$< $(LLAMA_BUILD_TARGETS) \
 		-o $@
 
