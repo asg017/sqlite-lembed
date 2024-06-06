@@ -21,7 +21,7 @@ endif
 
 ifdef CONFIG_DARWIN
 LOADABLE_EXTENSION=dylib
-DEFAULT_CFLAGS+=-framework Accelerate -framework Foundation -framework Metal -framework MetalKit
+CFLAGS+=-framework Accelerate -framework Foundation -framework Metal -framework MetalKit
 LLAMA_CMAKE_FLAGS+=-DLLAMA_METAL=0
 endif
 
@@ -46,8 +46,6 @@ LLAMA_CMAKE_FLAGS+=-DCMAKE_BUILD_TYPE=Release
 else
 LLAMA_CMAKE_FLAGS+=-DCMAKE_BUILD_TYPE=Debug
 endif
-
-CFLAGS += DEFAULT_CFLAGS
 
 prefix=dist
 
