@@ -3,6 +3,7 @@ COMMIT=$(shell git rev-parse HEAD)
 VERSION=$(shell cat VERSION)
 DATE=$(shell date +'%FT%TZ%z')
 
+LLAMA_CMAKE_FLAGS=-DLLAMA_OPENMP=OFF
 ifndef CC
 CC=gcc
 endif
@@ -20,7 +21,7 @@ endif
 
 ifdef CONFIG_DARWIN
 LOADABLE_EXTENSION=dylib
-CFLAGS+=-framework Accelerate -framework Foundation -framework Metal -framework MetalKit
+DEFAULT_CFLAGS+=-framework Accelerate -framework Foundation -framework Metal -framework MetalKit
 LLAMA_CMAKE_FLAGS+=-DLLAMA_METAL=0
 endif
 
@@ -45,6 +46,8 @@ LLAMA_CMAKE_FLAGS+=-DCMAKE_BUILD_TYPE=Release
 else
 LLAMA_CMAKE_FLAGS+=-DCMAKE_BUILD_TYPE=Debug
 endif
+
+CFLAGS += DEFAULT_CFLAGS
 
 prefix=dist
 
