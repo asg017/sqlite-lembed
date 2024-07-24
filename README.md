@@ -10,7 +10,7 @@ A SQLite extension for generating text embeddings with [llama.cpp](https://githu
 curl -L -o all-MiniLM-L6-v2.e4ce9877.q8_0.gguf https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf
 ```
 
-This is the [`sentence-transformers/all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) model that I converted to the `.gguf` format, and quantized at `Q8_0` (made smaller at the epense of some quality).
+This is the [`sentence-transformers/all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) model that I converted to the `.gguf` format, and quantized at `Q8_0` (made smaller at the expense of some quality).
 
 To load it into `sqlite-lembed`, register it with the `temp.lembed_models` table.
 
@@ -26,7 +26,7 @@ select lembed(
 );
 ```
 
-The `temp.lembed_clients` virtual table lets you "register" clients with pure `INSERT INTO` statements. The `name` field is a unique identifier for a given model, and `model` is typically provided as a path to the `.gguf` model, on disk, with the `lembed_model_from_file()` function.
+The `temp.lembed_models` virtual table lets you "register" models with pure `INSERT INTO` statements. The `name` field is a unique identifier for a given model, and `model` is provided as a path to the `.gguf` model, on disk, with the `lembed_model_from_file()` function.
 
 ### Using with `sqlite-vec`
 
@@ -48,7 +48,7 @@ insert into articles VALUES
   ('An Epoch Times executive is facing money laundering charge');
 
 
--- Build a vector table with embeddings of article headlines, using OpenAI's API
+-- Build a vector table with embeddings of article headlines
 create virtual table vec_articles using vec0(
   headline_embeddings float[384]
 );
