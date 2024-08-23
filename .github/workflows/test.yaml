@@ -62,6 +62,7 @@ jobs:
         shell: bash
       - run: make dist/.llama
       - run: ls dist/.llama
+      - run: make sqlite-lembed.h
       - run: cl.exe /LD /Ivendor/sqlite /Ivendor/llama.cpp /O2 sqlite-lembed.c dist/.llama/Debug/llama.lib dist/.llama/Debug/ggml_static.lib /link /OUT:dist/lembed0.dll
       - run: pip install pytest numpy; make test-loadable
       - uses: actions/upload-artifact@v4
