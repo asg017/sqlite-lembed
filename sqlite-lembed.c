@@ -834,6 +834,8 @@ static sqlite3_module lembed_chunksModule = {
   "Commit: " SQLITE_LEMBED_SOURCE "\n"                                            \
 
 
+#define DEFAULT_FLAGS (SQLITE_UTF8 | SQLITE_INNOCUOUS | SQLITE_DETERMINISTIC)
+
 #ifdef _WIN32
 __declspec(dllexport)
 #endif
@@ -849,8 +851,6 @@ __declspec(dllexport)
   memset(a, 0, sizeof(*a));
 
   int rc = SQLITE_OK;
-  const int DEFAULT_FLAGS =
-      SQLITE_UTF8 | SQLITE_INNOCUOUS | SQLITE_DETERMINISTIC;
 
   static const struct {
     char *zFName;
