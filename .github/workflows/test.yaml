@@ -30,7 +30,7 @@ jobs:
           submodules: recursive
       - run: ./scripts/vendor.sh
       - run: make loadable
-      - run: /usr/local/opt/python@3/libexec/bin/python -m pip install pytest numpy; make test-loadable python=/usr/local/opt/python@3/libexec/bin/python
+      - run: /usr/local/opt/python@3/libexec/bin/python -m pip install --break-system-packages pytest numpy; make test-loadable python=/usr/local/opt/python@3/libexec/bin/python
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-lembed-macos-x86_64-extension

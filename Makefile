@@ -71,6 +71,7 @@ $(BUILD_DIR):
 
 $(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
 	cmake --build $(BUILD_DIR) -t sqlite_lembed
+	ls $(BUILD_DIR)
 	cp $(BUILD_DIR)/lembed0.$(LOADABLE_EXTENSION) $@
 
 
