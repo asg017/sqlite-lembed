@@ -18,7 +18,7 @@ jobs:
           name: sqlite-lembed-linux-x86_64-extension
           path: dist/*.so
   build-macos-x86_64-extension:
-    runs-on: macos-11
+    runs-on: macos-12
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,6 +49,7 @@ jobs:
           submodules: recursive
       - uses: ilammy/msvc-dev-cmd@v1
       - run: ./scripts/vendor.sh
+        shell: bash
       - run: make loadable release=1
       - uses: actions/upload-artifact@v4
         with:
