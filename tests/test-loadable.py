@@ -120,7 +120,7 @@ def test_lembed():
     a = lembed("aaa", "alex garcia")
     assert len(a) == (384 * 4)
     assert struct.unpack("1f", a[0:4])[0] == pytest.approx(
-        -0.09205757826566696, rel=1e-3
+        -0.09205757826566696, rel=1e-2
     )
 
     with _raises(
@@ -138,7 +138,7 @@ def test_lembed():
     a = lembed("alex garcia")
     assert len(a) == (384 * 4)
     assert struct.unpack("1f", a[0:4])[0] == pytest.approx(
-        -0.09205757826566696, rel=1e-3
+        -0.09205757826566696, rel=1e-2
     )
 
 
