@@ -61,7 +61,7 @@ jobs:
       - run: ./scripts/vendor.sh
         shell: bash
       - run: make sqlite-lembed.h
-      #- uses: mxschmitt/action-tmate@v3
+      - uses: mxschmitt/action-tmate@v3
       - run: make loadable
       - run: pip install pytest numpy; make test-loadable
       - uses: actions/upload-artifact@v4
