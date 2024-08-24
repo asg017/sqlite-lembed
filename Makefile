@@ -60,38 +60,18 @@ loadable: $(TARGET_LOADABLE)
 static: $(TARGET_STATIC)
 
 
-LLAMA_BUILD_DIR=$(prefix)/.llama
-
-ifdef CONFIG_WINDOWS
-LLAMA_BUILD_TARGETS=$(LLAMA_BUILD_DIR)/Debug/llama.lib $(LLAMA_BUILD_DIR)/Debug/ggml_static.lib
-else
-LLAMA_BUILD_TARGETS=$(LLAMA_BUILD_DIR)/libllama.a $(LLAMA_BUILD_DIR)/libggml_static.a
-endif
+BUILD_DIR=$(prefix)/.build
 
 
-$(LLAMA_BUILD_DIR):
+
+$(BUILD_DIR):
 	rm -rf @ || true
-	cmake \
-		-S vendor/llama.cpp \
-		-B $@ \
-		-DLLAMA_STATIC=1 $(LLAMA_CMAKE_FLAGS)
+	cmake -B $@ $(LLAMA_CMAKE_FLAGS)
 
 
-$(LLAMA_BUILD_TARGETS): $(LLAMA_BUILD_DIR)
-	cmake --build $(LLAMA_BUILD_DIR) -t ggml_static -t llama
-
-
-$(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(LLAMA_BUILD_TARGETS) $(prefix)
-	gcc \
-		-fPIC -shared \
-		-Ivendor/sqlite \
-		-Ivendor/llama.cpp \
-		-O3 \
-		$(CFLAGS) \
-		-lstdc++ \
-		$< $(LLAMA_BUILD_TARGETS) \
-		-o $@
-
+$(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
+	cmake --build $(BUILD_DIR) -t sqlite_lembed
+	cp $(BUILD_DIR)/lembed0.$(LOADABLE_EXTENSION) $@
 
 
 sqlite-lembed.h: sqlite-lembed.h.tmpl VERSION
