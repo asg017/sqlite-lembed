@@ -135,7 +135,7 @@ def test_lembed():
     )
     a = lembed("alex garcia")
     assert len(a) == (384 * 4)
-    assert struct.unpack("1f", a[0:4])[0] == -0.09205757826566696
+    assert struct.unpack("1f", a[0:4])[0] == pytest.approx(-0.09205757826566696)
 
 
 @pytest.mark.skip(reason="TODO")
