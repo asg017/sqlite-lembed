@@ -69,10 +69,16 @@ $(BUILD_DIR):
 	cmake -B $@ $(LLAMA_CMAKE_FLAGS)
 
 
+ifdef CONFIG_WINDOWS
+BUILT_LOADABLE_PATH=$(BUILD_DIR)/Debug/lembed0.$(LOADABLE_EXTENSION)
+else
+BUILT_LOADABLE_PATH=$(BUILD_DIR)/lembed0.$(LOADABLE_EXTENSION)
+endif
+
 $(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
 	cmake --build $(BUILD_DIR) -t sqlite_lembed
 	ls $(BUILD_DIR)
-	cp $(BUILD_DIR)/lembed0.$(LOADABLE_EXTENSION) $@
+	cp $(BUILT_LOADABLE_PATH) $@
 
 
 sqlite-lembed.h: sqlite-lembed.h.tmpl VERSION
