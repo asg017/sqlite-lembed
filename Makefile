@@ -70,19 +70,18 @@ $(BUILD_DIR):
 
 
 ifdef CONFIG_WINDOWS
-
 ifdef release
 BUILT_LOADABLE_PATH=$(BUILD_DIR)/Release/lembed0.$(LOADABLE_EXTENSION)
+EXTRA_CMAKE_BUILD=--config Release
 else
 BUILT_LOADABLE_PATH=$(BUILD_DIR)/Debug/lembed0.$(LOADABLE_EXTENSION)
 endif
-
 else
 BUILT_LOADABLE_PATH=$(BUILD_DIR)/lembed0.$(LOADABLE_EXTENSION)
 endif
 
 $(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
-	cmake --build $(BUILD_DIR) -t sqlite_lembed
+	cmake --build $(BUILD_DIR) -t sqlite_lembed $(EXTRA_CMAKE_BUILD)
 	ls $(BUILD_DIR)
 	cp $(BUILT_LOADABLE_PATH) $@
 
