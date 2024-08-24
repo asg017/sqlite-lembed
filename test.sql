@@ -53,7 +53,7 @@ with models as (
 )
 select
   name,
-  lembed_model_from_file(model_path),`
+  lembed_model_from_file(model_path),
   lembed_model_options(
     'n_gpu_layers', 99
   ),

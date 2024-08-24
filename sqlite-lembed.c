@@ -274,15 +274,32 @@ int api_model_from_name(struct Api *api, const char *name, int name_length,
 static void lembed(sqlite3_context *context, int argc, sqlite3_value **argv) {
   struct llama_model *model;
   struct llama_context *ctx;
-  int rc = api_model_from_name((struct Api *)sqlite3_user_data(context),
+  int rc;
+  const char * input;
+  sqlite3_int64 input_len;
+  if(argc == 1) {
+    input = (const char *)sqlite3_value_text(argv[0]);
+    input_len = sqlite3_value_bytes(argv[0]);
+    rc = api_model_from_name((struct Api *)sqlite3_user_data(context), "default", strlen("default"), &model, &ctx);
+    if(rc != SQLITE_OK) {
+      sqlite3_result_error(context, "No default model has been registered yet with lembed_models", -1);
+      return;
+    }
+  }else {
+    input = (const char *)sqlite3_value_text(argv[1]);
+    input_len = sqlite3_value_bytes(argv[1]);
+    rc = api_model_from_name((struct Api *)sqlite3_user_data(context),
                                (const char *)sqlite3_value_text(argv[0]),
                                sqlite3_value_bytes(argv[0]), &model, &ctx);
-  if(rc != SQLITE_OK) {
-    sqlite3_result_error(context, "Unknown model name. Was it registered with lembed_models?", -1);
-    return;
+
+    if(rc != SQLITE_OK) {
+      char * zSql = sqlite3_mprintf("Unknown model name '%s'. Was it registered with lembed_models?", sqlite3_value_text(argv[0]));
+      sqlite3_result_error(context, zSql, -1);
+      sqlite3_free(zSql);
+      return;
+    }
   }
-  const char *input = (const char *)sqlite3_value_text(argv[1]);
-  sqlite3_int64 input_len = sqlite3_value_bytes(argv[1]);
+
   int dimensions;
   float *embedding;
   rc = embed_single(model, ctx, input, input_len, &embedding, &dimensions);
@@ -483,10 +500,6 @@ static int lembed_modelsUpdate(sqlite3_vtab *pVTab, int argc,
     }
     p->api->models[idx].model = model;
     p->api->models[idx].context = ctx;
-
-    if (strcmp(key, "default") == 0) {
-      printf("default detected\n");
-    }
     return SQLITE_OK;
   }
   // UPDATE operation
@@ -880,6 +893,7 @@ __declspec(dllexport)
     int nArg;
   } aFuncApi[] = {
       // clang-format off
+    {"lembed",                 lembed,                    1},
     {"lembed",                 lembed,                    2},
     {"lembed_tokenize_json",   lembed_tokenize_json,      2},
     {"lembed_token_score",     lembed_token_score,        2},

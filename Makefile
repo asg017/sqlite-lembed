@@ -92,8 +92,16 @@ sqlite-lembed.h: sqlite-lembed.h.tmpl VERSION
 	SOURCE=$(shell git log -n 1 --pretty=format:%H -- VERSION) \
 	envsubst < $< > $@
 
-test-loadable:
-	echo 4
+MODELS_DIR=$(prefix)/.models
+
+$(MODELS_DIR): $(BUILD_DIR)
+	mkdir -p $@
+
+$(MODELS_DIR)/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf: $(MODELS_DIR)
+	curl -L -o $@ https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf
+
+test-loadable: $(TARGET_LOADABLE) $(MODELS_DIR)/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf
+	python -m pytest tests/test-loadable.py
 
 
 FORMAT_FILES=sqlite-lembed.c
