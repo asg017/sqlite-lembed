@@ -16,7 +16,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-lembed-linux-x86_64-extension
-          path: dist/*
+          path: dist/*.so
   build-macos-x86_64-extension:
     runs-on: macos-11
     steps:
@@ -28,7 +28,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-lembed-macos-x86_64-extension
-          path: dist/*
+          path: dist/*.dylib
   build-macos-aarch64-extension:
     runs-on: macos-14
     steps:
@@ -40,7 +40,20 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-lembed-macos-aarch64-extension
-          path: dist/*
+          path: dist/*.dylib
+  build-windows-x86_64-extension:
+    runs-on: windows-2019
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: ilammy/msvc-dev-cmd@v1
+      - run: ./scripts/vendor.sh
+      - run: make loadable release=1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-lembed-windows-x86_64-extension
+          path: dist/*.dll
   dist:
     runs-on: ubuntu-latest
     needs:
@@ -48,6 +61,7 @@ jobs:
         build-linux-x86_64-extension,
         build-macos-x86_64-extension,
         build-macos-aarch64-extension,
+        build-windows-x86_64-extension,
       ]
     permissions:
       contents: write
@@ -65,8 +79,12 @@ jobs:
         with:
           name: sqlite-lembed-macos-aarch64-extension
           path: dist/macos-aarch64
+      - uses: actions/download-artifact@v4
+        with:
+          name: sqlite-lembed-windows-x86_64-extension
+          path: dist/windows-x86_64
       - run: |
-          curl -L https://github.com/asg017/sqlite-dist/releases/download/v0.0.1-alpha.7/sqlite-dist-x86_64-unknown-linux-gnu.tar.xz \
+          curl -L https://github.com/asg017/sqlite-dist/releases/download/v0.0.1-alpha.11/sqlite-dist-x86_64-unknown-linux-gnu.tar.xz \
             | tar xfJ - --strip-components 1
       - run: make sqlite-lembed.h
       - run: ./sqlite-dist ./sqlite-dist.toml --input dist/ --output distx/ --version $(cat VERSION)

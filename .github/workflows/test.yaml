@@ -21,7 +21,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-lembed-linux-x86_64-extension
-          path: dist/*
+          path: dist/*.so
   build-macos-x86_64-extension:
     runs-on: macos-12
     steps:
@@ -34,7 +34,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-lembed-macos-x86_64-extension
-          path: dist/*
+          path: dist/*.dylib
   build-macos-aarch64-extension:
     runs-on: macos-14
     steps:
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-lembed-macos-aarch64-extension
-          path: dist/*
+          path: dist/*.dylib
   build-windows-x86_64-extension:
     runs-on: windows-2019
     steps:
@@ -67,4 +67,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sqlite-lembed-windows-x86_64-extension
-          path: dist/*
+          path: dist/*.dll
