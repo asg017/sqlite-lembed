@@ -101,7 +101,7 @@ $(MODELS_DIR)/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf: $(MODELS_DIR)
 	curl -L -o $@ https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf
 
 test-loadable: $(TARGET_LOADABLE) $(MODELS_DIR)/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf
-	python -m pytest tests/test-loadable.py
+	$(PYTHON) -m pytest tests/test-loadable.py
 
 
 FORMAT_FILES=sqlite-lembed.c
