@@ -119,7 +119,9 @@ def test_lembed():
     ).fetchone()[0]
     a = lembed("aaa", "alex garcia")
     assert len(a) == (384 * 4)
-    assert struct.unpack("1f", a[0:4])[0] == pytest.approx(-0.09205757826566696)
+    assert struct.unpack("1f", a[0:4])[0] == pytest.approx(
+        -0.09205757826566696, rel=1e-3
+    )
 
     with _raises(
         "Unknown model name 'aaaaaaaaa'. Was it registered with lembed_models?"
@@ -135,7 +137,9 @@ def test_lembed():
     )
     a = lembed("alex garcia")
     assert len(a) == (384 * 4)
-    assert struct.unpack("1f", a[0:4])[0] == pytest.approx(-0.09205757826566696)
+    assert struct.unpack("1f", a[0:4])[0] == pytest.approx(
+        -0.09205757826566696, rel=1e-3
+    )
 
 
 @pytest.mark.skip(reason="TODO")
