@@ -62,7 +62,6 @@ jobs:
         shell: bash
       - run: make sqlite-lembed.h
       #- uses: mxschmitt/action-tmate@v3
-      - run: ls dist/.build/
       - run: make loadable
       - run: pip install pytest numpy; make test-loadable
       - uses: actions/upload-artifact@v4
