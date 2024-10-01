@@ -10,3 +10,5 @@ ggml-metal.metal
 News*.json
 sqlite-lembed.h
 dist/
+
+*.db

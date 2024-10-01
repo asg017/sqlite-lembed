@@ -85,6 +85,11 @@ $(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
 	ls $(BUILD_DIR)
 	cp $(BUILT_LOADABLE_PATH) $@
 
+$(TARGET_STATIC): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
+	cmake --build $(BUILD_DIR) -t sqlite_lembed_static $(EXTRA_CMAKE_BUILD)
+	ls $(BUILD_DIR)
+	cp $(BUILT_LOADABLE_PATH) $@
+
 
 sqlite-lembed.h: sqlite-lembed.h.tmpl VERSION
 	VERSION=$(shell cat VERSION) \

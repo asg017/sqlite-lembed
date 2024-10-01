@@ -16,7 +16,7 @@ SQLITE_EXTENSION_INIT1
 void dummy_log(enum ggml_log_level level, const char *text, void *user_data) {}
 
 static void normalize(float *vec, float *out, int n) {
-  float norm = 0;
+  double norm = 0;
   for (int i = 0; i < n; i++) {
     norm += vec[i] * vec[i];
   }
@@ -52,15 +52,23 @@ int tokenize(struct llama_model *model, const char *input, size_t input_length,
   return SQLITE_OK;
 }
 
-int embed_single(struct llama_model *model, struct llama_context *context,
+int embed_single(struct llama_context *context,
                  const char *input, size_t input_length,
                  /** Output float embedding */
                  float **out_embedding,
                  /** Output embedding length (n dimensions) */
                  int *out_dimensions) {
+  struct llama_model * model = (struct llama_model *) llama_get_model(context);
+
   int n_batch = 512;
   int n_ctx_train = llama_n_ctx_train(model);
   int n_ctx = llama_n_ctx(context);
+
+  int dimensions = llama_n_embd(model);
+  float *output_embedding = sqlite3_malloc(sizeof(float) * dimensions);
+  if(!output_embedding) {
+    return SQLITE_NOMEM;
+  }
 
   llama_token *tokens;
   int token_count;
@@ -83,13 +91,6 @@ int embed_single(struct llama_model *model, struct llama_context *context,
 
     batch.logits[batch.n_tokens] = i == (token_count - 1);
     batch.n_tokens++;
-  }
-
-  int dimensions = llama_n_embd(model);
-  float *output_embedding = sqlite3_malloc(sizeof(float) * dimensions);
-  if(!output_embedding) {
-    llama_batch_free(batch);
-    return SQLITE_NOMEM;
   }
 
   llama_kv_cache_clear(context); // KV not needed for embeddings?
@@ -302,7 +303,7 @@ static void lembed(sqlite3_context *context, int argc, sqlite3_value **argv) {
 
   int dimensions;
   float *embedding;
-  rc = embed_single(model, ctx, input, input_len, &embedding, &dimensions);
+  rc = embed_single(ctx, input, input_len, &embedding, &dimensions);
   if(rc != SQLITE_OK) {
     sqlite3_result_error(context, "Error generating embedding", -1);
     return;
@@ -478,6 +479,7 @@ static int lembed_modelsUpdate(sqlite3_vtab *pVTab, int argc,
     struct llama_context *ctx;
     struct llama_context_params cparams = llama_context_default_params();
     cparams.embeddings = 1;
+    cparams.n_ubatch = cparams.n_batch = 512;
     if (contextOptions) {
       if (contextOptions->defined[0]) {
         cparams.seed = contextOptions->seed;
@@ -833,6 +835,407 @@ static sqlite3_module lembed_chunksModule = {
     /* xShadowName */ 0};
 #pragma endregion
 
+#pragma region lembed_batch
+
+
+struct Array {
+  size_t element_size;
+  size_t length;
+  size_t capacity;
+  void *z;
+};
+
+/**
+ * @brief Initial an array with the given element size and capacity.
+ *
+ * @param array
+ * @param element_size
+ * @param init_capacity
+ * @return SQLITE_OK on success, error code on failure. Only error is
+ * SQLITE_NOMEM
+ */
+int array_init(struct Array *array, size_t element_size, size_t init_capacity) {
+  int sz = element_size * init_capacity;
+  void *z = sqlite3_malloc(sz);
+  if (!z) {
+    return SQLITE_NOMEM;
+  }
+  memset(z, 0, sz);
+
+  array->element_size = element_size;
+  array->length = 0;
+  array->capacity = init_capacity;
+  array->z = z;
+  return SQLITE_OK;
+}
+
+int array_append(struct Array *array, const void *element) {
+  if (array->length == array->capacity) {
+    size_t new_capacity = array->capacity * 2 + 100;
+    void *z = sqlite3_realloc64(array->z, array->element_size * new_capacity);
+    if (z) {
+      array->capacity = new_capacity;
+      array->z = z;
+    } else {
+      return SQLITE_NOMEM;
+    }
+  }
+  memcpy(&((unsigned char *)array->z)[array->length * array->element_size],
+         element, array->element_size);
+  array->length++;
+  return SQLITE_OK;
+}
+
+void array_cleanup(struct Array *array) {
+  if (!array)
+    return;
+  array->element_size = 0;
+  array->length = 0;
+  array->capacity = 0;
+  sqlite3_free(array->z);
+  array->z = NULL;
+}
+
+typedef struct lembed_batch_vtab lembed_batch_vtab;
+struct lembed_batch_vtab {
+  sqlite3_vtab base;
+  sqlite3 * db;
+  struct Api * api;
+};
+
+typedef struct lembed_batch_cursor lembed_batch_cursor;
+struct lembed_batch_cursor {
+  sqlite3_vtab_cursor base;
+  struct Api * api;
+  struct llama_context *lctx;
+  sqlite3_int64 iRowid;
+  sqlite3_stmt * stmt;
+  int dimensions;
+  int eof;
+  int stmtRc;
+
+
+  int batchIdx;
+  int batchSize;
+  struct Array contentsArray;
+  struct Array contentLengthsArray;
+  float * embeddings;
+};
+
+
+static int lembed_batchConnect(
+  sqlite3 *db,
+  void *pAux,
+  int argc, const char *const*argv,
+  sqlite3_vtab **ppVtab,
+  char **pzErr
+){
+  lembed_batch_vtab *pNew;
+  int rc;
+
+  rc = sqlite3_declare_vtab(db,
+           "CREATE TABLE x(contents,embedding, model hidden, input hidden)"
+       );
+#define LEMBED_BATCH_CONTENTS  0
+#define LEMBED_BATCH_EMBEDDING 1
+#define LEMBED_BATCH_MODEL     2
+#define LEMBED_BATCH_INPUT     3
+  if( rc==SQLITE_OK ){
+    pNew = sqlite3_malloc( sizeof(*pNew) );
+    *ppVtab = (sqlite3_vtab*)pNew;
+    if( pNew==0 ) return SQLITE_NOMEM;
+    memset(pNew, 0, sizeof(*pNew));
+  }
+  rc = sqlite3_open(":memory:", &pNew->db);
+  pNew->api = pAux;
+  return rc;
+}
+
+static int lembed_batchDisconnect(sqlite3_vtab *pVtab){
+  lembed_batch_vtab *p = (lembed_batch_vtab*)pVtab;
+  sqlite3_close(p->db);
+  sqlite3_free(p);
+  return SQLITE_OK;
+}
+
+static int lembed_batchOpen(sqlite3_vtab *p, sqlite3_vtab_cursor **ppCursor){
+  lembed_batch_cursor *pCur;
+  pCur = sqlite3_malloc( sizeof(*pCur) );
+  if( pCur==0 ) return SQLITE_NOMEM;
+  memset(pCur, 0, sizeof(*pCur));
+  *ppCursor = &pCur->base;
+  pCur->api = ( (lembed_batch_vtab *) p)->api;
+  int rc = sqlite3_prepare_v2(
+    ( (lembed_batch_vtab *) p)->db,
+    "select json_extract(value, '$.contents') from json_each(?)",
+    -1,
+    &pCur->stmt,
+    NULL
+  );
+  assert(rc == SQLITE_OK);
+  return rc;
+}
+
+static int lembed_batchClose(sqlite3_vtab_cursor *cur){
+  lembed_batch_cursor *pCur = (lembed_batch_cursor*)cur;
+  sqlite3_finalize(pCur->stmt);
+  sqlite3_free(pCur);
+  return SQLITE_OK;
+}
+
+static int lembed_batchBestIndex(
+  sqlite3_vtab *pVTab,
+  sqlite3_index_info *pIdxInfo
+){
+
+  int hasSource = 0;
+  for (int i = 0; i < pIdxInfo->nConstraint; i++) {
+    const struct sqlite3_index_constraint *pCons = &pIdxInfo->aConstraint[i];
+    switch (pCons->iColumn) {
+    case LEMBED_BATCH_MODEL: {
+      if (!hasSource && !pCons->usable ||
+          pCons->op != SQLITE_INDEX_CONSTRAINT_EQ)
+        return SQLITE_CONSTRAINT;
+      hasSource = 1;
+      pIdxInfo->aConstraintUsage[i].argvIndex = 1;
+      pIdxInfo->aConstraintUsage[i].omit = 1;
+      break;
+    }
+    }
+  }
+  if (!hasSource) {
+    pVTab->zErrMsg = sqlite3_mprintf("source argument is required");
+    return SQLITE_ERROR;
+  }
+
+  pIdxInfo->estimatedCost = (double)10;
+  pIdxInfo->estimatedRows = 10;
+  return SQLITE_OK;
+}
+
+// SQLITE_ROW: embed some, stmt has more
+// SQLITE_DONE: done after this chunk
+// else: error
+int embed_batch(
+  lembed_batch_cursor *pCur
+  ) {
+  int32_t n_batch = 512;
+  struct llama_batch batch = llama_batch_init(n_batch, 0, 1);
+  int nprocessed = 0;
+  int rc;
+
+  while(1) {
+    if(pCur->stmtRc == SQLITE_DONE) {
+      pCur->eof = 1;
+      break;
+    }
+    assert(pCur->stmtRc == SQLITE_ROW);
+
+    char * s = (char *) sqlite3_column_text(pCur->stmt, 0);
+    int len = sqlite3_column_bytes(pCur->stmt, 0);
+
+    int input_token_count_estimate = llama_tokenize(llama_get_model(pCur->lctx), s, len, NULL, 0, true, true);
+    assert(input_token_count_estimate < 0);
+    llama_token *tokens = sqlite3_malloc(sizeof(llama_token) * abs(input_token_count_estimate));
+    assert(tokens);
+
+    int input_token_count = llama_tokenize(llama_get_model(pCur->lctx), s, len, tokens, abs(input_token_count_estimate), true, true);
+    assert(input_token_count == abs(input_token_count_estimate));
+
+    if (batch.n_tokens + input_token_count > n_batch) {
+      assert(nprocessed>0);
+      sqlite3_free(tokens);
+      break;
+    }
+
+    for (size_t i = 0; i < input_token_count; i++) {
+        batch.token   [batch.n_tokens] = tokens[i];
+        batch.pos     [batch.n_tokens] = i;
+        batch.n_seq_id[batch.n_tokens] = 1;
+        batch.seq_id[batch.n_tokens][0] = nprocessed;
+        batch.logits  [batch.n_tokens] = i == (input_token_count - 1);
+        batch.n_tokens++;
+    }
+    sqlite3_free(tokens);
+    nprocessed += 1;
+    char * zCopy = sqlite3_mprintf("%.*s", len, s);
+    assert(zCopy);
+    assert(array_append(&pCur->contentsArray, &zCopy) == SQLITE_OK);
+    assert(array_append(&pCur->contentLengthsArray, &len) == SQLITE_OK);
+    pCur->stmtRc = sqlite3_step(pCur->stmt);
+  }
+  if(nprocessed==0) {
+    pCur->batchSize = 0;
+    pCur->batchIdx = 0;
+    return SQLITE_DONE;
+  }
+  printf("nprocessed=%d\n", nprocessed);
+
+  float * embeddings = sqlite3_malloc(pCur->dimensions * sizeof(float) * nprocessed);
+  assert(embeddings);
+  memset(embeddings, 0, pCur->dimensions * sizeof(float) * nprocessed);
+
+  llama_kv_cache_clear(pCur->lctx);
+  rc = llama_decode(pCur->lctx, batch);
+  assert(rc >= 0 );
+  for (int i = 0; i < batch.n_tokens; i++) {
+    if (!batch.logits[i]) {
+        continue;
+    }
+
+    float * embd = llama_get_embeddings_seq(pCur->lctx, batch.seq_id[i][0]);
+    assert(embd);
+    float * out = embeddings + batch.seq_id[i][0] * pCur->dimensions;
+    normalize(embd, out, pCur->dimensions);
+  }
+
+  llama_batch_free(batch);
+  pCur->embeddings = embeddings;
+  pCur->batchSize = nprocessed;
+  pCur->batchIdx = 0;
+  return SQLITE_ROW;
+}
+static int lembed_batchFilter(
+  sqlite3_vtab_cursor *pVtabCursor,
+  int idxNum, const char *idxStr,
+  int argc, sqlite3_value **argv
+){
+  int rc;
+  lembed_batch_cursor *pCur = (lembed_batch_cursor *)pVtabCursor;
+  sqlite3_reset(pCur->stmt);
+  sqlite3_clear_bindings(pCur->stmt);
+  sqlite3_bind_text(pCur->stmt, 1, sqlite3_value_text(argv[0]), sqlite3_value_bytes(argv[0]), SQLITE_TRANSIENT);
+  pCur->stmtRc = sqlite3_step(pCur->stmt);
+  assert(pCur->stmtRc == SQLITE_ROW || pCur->stmtRc == SQLITE_DONE);
+
+  struct llama_model *model;
+  rc = api_model_from_name(pCur->api, "default", strlen("default"), &model, &pCur->lctx);
+  if(rc != SQLITE_OK) {
+    return SQLITE_ERROR;
+  }
+  pCur->dimensions = llama_n_embd(model);
+  for(int i = 0; i < pCur->batchSize; i++) {
+    sqlite3_free(((char **)pCur->contentsArray.z)[i]);
+  }
+  array_cleanup(&pCur->contentsArray);
+  array_cleanup(&pCur->contentLengthsArray);
+  if(pCur->embeddings) {
+    sqlite3_free(pCur->embeddings);
+    pCur->embeddings = NULL;
+  }
+  rc = array_init(&pCur->contentsArray, sizeof(char *), 32);
+  assert(rc == SQLITE_OK);
+  rc = array_init(&pCur->contentLengthsArray, sizeof(int), 32);
+  assert(rc == SQLITE_OK);
+  pCur->iRowid = 0;
+  pCur->eof = 0;
+
+  rc = embed_batch(pCur);
+  assert(rc == SQLITE_ROW || rc == SQLITE_DONE);
+  return SQLITE_OK;
+}
+
+static int lembed_batchEof(sqlite3_vtab_cursor *cur){
+  lembed_batch_cursor *pCur = (lembed_batch_cursor*)cur;
+  return (pCur->batchIdx >= pCur->batchSize) &&  pCur->eof;
+}
+
+
+static int lembed_batchNext(sqlite3_vtab_cursor *cur){
+  lembed_batch_cursor *pCur = (lembed_batch_cursor*)cur;
+  pCur->iRowid++;
+  pCur->batchIdx++;
+  if(pCur->batchIdx >= pCur->batchSize) {
+    int rc;
+    for(int i = 0; i < pCur->batchSize; i++) {
+      sqlite3_free(((char **)pCur->contentsArray.z)[i]);
+    }
+    array_cleanup(&pCur->contentsArray);
+    array_cleanup(&pCur->contentLengthsArray);
+    if(pCur->embeddings) {
+      sqlite3_free(pCur->embeddings);
+      pCur->embeddings = NULL;
+    }
+    rc = array_init(&pCur->contentsArray, sizeof(char *), 32);
+    assert(rc == SQLITE_OK);
+    rc = array_init(&pCur->contentLengthsArray, sizeof(int), 32);
+    assert(rc == SQLITE_OK);
+    rc = embed_batch(pCur);
+    assert(rc == SQLITE_ROW || rc == SQLITE_DONE);
+  }
+  return SQLITE_OK;
+}
+
+static int lembed_batchRowid(sqlite3_vtab_cursor *cur, sqlite_int64 *pRowid){
+  lembed_batch_cursor *pCur = (lembed_batch_cursor*)cur;
+  *pRowid = pCur->iRowid;
+  return SQLITE_OK;
+}
+
+
+static int lembed_batchColumn(
+  sqlite3_vtab_cursor *cur,
+  sqlite3_context *context,
+  int i
+){
+  lembed_batch_cursor *pCur = (lembed_batch_cursor*)cur;
+  switch( i ){
+    case LEMBED_BATCH_CONTENTS:
+      sqlite3_result_text(
+        context,
+        ((char **)pCur->contentsArray.z)[pCur->batchIdx],
+        ((int *) pCur->contentLengthsArray.z)[pCur->batchIdx],
+        SQLITE_TRANSIENT
+      );
+      break;
+    case LEMBED_BATCH_EMBEDDING:
+      sqlite3_result_blob(
+        context,
+        pCur->embeddings + (pCur->dimensions * pCur->batchIdx),
+        sizeof(float) * pCur->dimensions,
+        SQLITE_TRANSIENT
+      );
+      sqlite3_result_subtype(context, 223); // TODO define
+      break;
+    default:
+      sqlite3_result_null(context);
+  }
+  return SQLITE_OK;
+}
+
+/*
+** This following structure defines all the methods for the
+** virtual table.
+*/
+static sqlite3_module lembed_batchModule = {
+  /* iVersion    */ 3,
+  /* xCreate     */ 0,
+  /* xConnect    */ lembed_batchConnect,
+  /* xBestIndex  */ lembed_batchBestIndex,
+  /* xDisconnect */ lembed_batchDisconnect,
+  /* xDestroy    */ 0,
+  /* xOpen       */ lembed_batchOpen,
+  /* xClose      */ lembed_batchClose,
+  /* xFilter     */ lembed_batchFilter,
+  /* xNext       */ lembed_batchNext,
+  /* xEof        */ lembed_batchEof,
+  /* xColumn     */ lembed_batchColumn,
+  /* xRowid      */ lembed_batchRowid,
+  /* xUpdate     */ 0,
+  /* xBegin      */ 0,
+  /* xSync       */ 0,
+  /* xCommit     */ 0,
+  /* xRollback   */ 0,
+  /* xFindMethod */ 0,
+  /* xRename     */ 0,
+  /* xSavepoint  */ 0,
+  /* xRelease    */ 0,
+  /* xRollbackTo */ 0,
+  /* xShadowName */ 0,
+  /* xIntegrity  */ 0
+};
+#pragma endregion
+
 #ifndef SQLITE_SUBTYPE
 #define SQLITE_SUBTYPE 0x000100000
 #endif
@@ -917,5 +1320,6 @@ __declspec(dllexport)
 
   sqlite3_create_module_v2(db, "lembed_chunks", &lembed_chunksModule, a, NULL);
   sqlite3_create_module_v2(db, "lembed_models", &lembed_modelsModule, a, NULL);
+  sqlite3_create_module_v2(db, "lembed_batch",  &lembed_batchModule,  a, NULL);
   return SQLITE_OK;
 }
