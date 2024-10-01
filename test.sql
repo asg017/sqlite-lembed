@@ -13,7 +13,100 @@ select lembed_version(), lembed_debug();
 
 
 INSERT INTO temp.lembed_models(name, model)
-  select 'all-MiniLM-L6-v2', lembed_model_from_file('models/all-MiniLM-L6-v2-44eb4044.gguf');
+  select 'default', lembed_model_from_file('/Users/alex/projects/llama.cpp/all-MiniLM-L6-v2.F16.gguf');
+
+
+create table articles as
+  select column1 as headline
+  from (VALUES
+    ('Shohei Ohtani''s ex-interpreter pleads guilty to charges related to gambling and theft'),
+    ('The jury has been selected in Hunter Biden''s gun trial'),
+    ('Larry Allen, a Super Bowl champion and famed Dallas Cowboy, has died at age 52'),
+    ('After saying Charlotte, a lone stingray, was pregnant, aquarium now says she''s sick'),
+    ('An Epoch Times executive is facing money laundering charge'),
+    ('Hassan Nasrallah’s killing transforms an already deadly regional conflict'),
+    ('Who was Hassan Nasrallah, the Hezbollah leader killed by Israel?'),
+    ('What is Hezbollah, the militia fighting Israel in Lebanon?'),
+    ('Netanyahu defies calls for a cease-fire at the U.N., as Israel strikes Lebanon'),
+    ('Death toll from Hurricane Helene mounts as aftermath assessment begins'),
+    ('5 things to know from this week’s big report on cannabis'),
+    ('VP debates may alter a close race’s dynamic even when they don''t predict the winner'),
+    ('SpaceX launches ISS-bound crew that hopes to bring home 2 stuck astronauts'),
+    ('Why the price of eggs is on the rise again'),
+    ('A guide to your weekend viewing and reading'),
+    ('At the border in Arizona, Harris lays out a plan to get tough on fentanyl'),
+    ('A new kind of drug for schizophrenia promises fewer side effects'),
+    ('Meet the astronauts preparing to travel farther from Earth than any human before'),
+    ('‘SNL’ has always taken on politics. Here’s what works — and why'),
+    ('Golden-age rappers make a digital-age leap — and survive'),
+    ('Why Russia''s broadcaster RT turned to covertly funding American pro-Trump influencers'),
+    ('Read the indictment: NYC Mayor Eric Adams charged with bribery, fraud, foreign donations'),
+    ('Justice Department sues Alabama, claiming it purged voters too close to the election'),
+    ('Exactly 66 years ago, another Hurricane Helene rocked the Carolinas'),
+    ('A meteorologist in Atlanta rescued a woman from Helene floodwaters on camera')
+  );
+
+select * from articles;
+
+.timer on
+select headline, length(lembed( headline)) from articles;
+
+select
+  rowid,
+  contents,
+  --length(embedding),
+  vec_to_json(vec_slice(embedding, 0, 8))
+from lembed_batch(
+  (
+    select json_group_array(
+      json_object(
+        'id', rowid,
+      'contents', headline
+      )
+    ) from articles
+  )
+);
+
+select
+  rowid,
+  headline,
+  vec_to_json(vec_slice(lembed(headline), 0, 8))
+from articles;
+
+.exit
+
+select
+  rowid,
+  contents,
+  --length(embedding),
+  vec_to_json(vec_slice(embedding, 0, 8)),
+  vec_to_json(vec_slice(lembed(contents), 0, 8))
+
+from lembed_batch(
+  (
+    '[
+      {"contents": "Shohei Ohtani''s ex-interpreter pleads guilty to charges related to gambling and theft"}
+    ]'
+  )
+);
+select
+  rowid,
+  contents,
+  --length(embedding),
+  vec_to_json(vec_slice(embedding, 0, 8)),
+  vec_to_json(vec_slice(lembed(contents), 0, 8))
+
+from lembed_batch(
+  (
+    '[
+      {"contents": "Shohei Ohtani''s ex-interpreter pleads guilty to charges related to gambling and theft"},
+      {"contents": "The jury has been selected in Hunter Biden''s gun trial"}
+    ]'
+  )
+);
+
+
+.exit
 
 select vec_length(lembed('all-MiniLM-L6-v2', 'hello')) as embedding;
 

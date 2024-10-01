@@ -17,8 +17,8 @@ To load it into `sqlite-lembed`, register it with the `temp.lembed_models` table
 ```sql
 .load ./lembed0
 
-INSERT INTO temp.lembed_models(name, model)
-  select 'all-MiniLM-L6-v2', lembed_model_from_file('all-MiniLM-L6-v2.e4ce9877.q8_0.gguf');
+insert into temp.lembed_models(name, model)
+  values ('default', lembed_model_from_file('all-MiniLM-L6-v2.e4ce9877.q8_0.gguf'));
 
 select lembed(
   'all-MiniLM-L6-v2',
@@ -54,7 +54,7 @@ create virtual table vec_articles using vec0(
 );
 
 insert into vec_articles(rowid, headline_embeddings)
-  select rowid, lembed('all-MiniLM-L6-v2', headline)
+  select rowid, lembed( headline)
   from articles;
 
 ```
@@ -71,7 +71,7 @@ with matches as (
     rowid,
     distance
   from vec_articles
-  where headline_embeddings match lembed('all-MiniLM-L6-v2', :query)
+  where headline_embeddings match lembed(:query)
   order by distance
   limit 3
 )
