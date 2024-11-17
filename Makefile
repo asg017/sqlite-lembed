@@ -22,7 +22,6 @@ endif
 ifdef CONFIG_DARWIN
 LOADABLE_EXTENSION=dylib
 CFLAGS+=-framework Accelerate -framework Foundation -framework Metal -framework MetalKit
-LLAMA_CMAKE_FLAGS+=-DLLAMA_METAL=0
 endif
 
 ifdef CONFIG_LINUX
