@@ -26,7 +26,7 @@ set(LLAMA_OPENMP OFF)
 
 FetchContent_Declare(
   llama_cpp
-  GIT_REPOSITORY git@github.com:ggerganov/llama.cpp.git
+  GIT_REPOSITORY https://github.com/ggerganov/llama.cpp.git
   GIT_TAG        b3091
 )
 FetchContent_MakeAvailable(llama_cpp)
