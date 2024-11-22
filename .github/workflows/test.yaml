@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - batching
 permissions:
   contents: read
 jobs:
@@ -63,3 +64,25 @@ jobs:
         with:
           name: sqlite-lembed-windows-x86_64-extension
           path: dist/*.dll
+  build-cosmopolitan:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          mkdir $HOME/cosmo
+          curl -L -o cosmocc-$COSMO_VERSION.zip https://github.com/jart/cosmopolitan/releases/download/$COSMO_VERSION/cosmocc-$COSMO_VERSION.zip
+          unzip cosmocc-$COSMO_VERSION.zip -d $HOME/cosmo
+        env:
+          COSMO_VERSION: "3.5.4"
+      - run: make sqlite-lembed.h
+      - run: make cli CC=$HOME/cosmo/bin/cosmocc CXX=$HOME/cosmo/bin/cosmoc++ AR=$HOME/cosmo/bin/cosmoar OMIT_SIMD=1
+      - run: tar -czvf sqlite-lembed-$(cat VERSION)-cli-cosmopolitan.tar.gz dist/sqlite3
+      - run: gh release upload ${{ github.ref_name }} sqlite-lembed-$(cat VERSION)-cli-cosmopolitan.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-lembed-cosmopolitan
+          path: dist/*
