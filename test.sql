@@ -1,5 +1,5 @@
-.load ./dist/lembed0
-.load ../sqlite-vec/dist/vec0
+--.load ./dist/lembed0
+--.load ../sqlite-vec/dist/vec0
 
 .mode box
 .header on
@@ -8,7 +8,7 @@
 .timer on
 .echo on
 
-select lembed_version(), lembed_debug();
+select sqlite_version(), lembed_version(), vec_version();
 
 
 
