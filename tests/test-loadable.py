@@ -140,6 +140,9 @@ def test_lembed():
     assert struct.unpack("1f", a[0:4])[0] == pytest.approx(
         -0.09205757826566696, rel=1e-2
     )
+    
+    # test input larger than default 512 tokens
+    lembed('ab' * 1000)
 
 
 @pytest.mark.skip(reason="TODO")
