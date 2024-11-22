@@ -75,7 +75,7 @@ jobs:
           curl -L -o cosmocc-$COSMO_VERSION.zip https://github.com/jart/cosmopolitan/releases/download/$COSMO_VERSION/cosmocc-$COSMO_VERSION.zip
           unzip cosmocc-$COSMO_VERSION.zip -d $HOME/cosmo
         env:
-          COSMO_VERSION: "3.5.4"
+          COSMO_VERSION: "3.9.6"
       - run: make sqlite-lembed.h
       - run: make cli CC=$HOME/cosmo/bin/cosmocc CXX=$HOME/cosmo/bin/cosmoc++ AR=$HOME/cosmo/bin/cosmoar OMIT_SIMD=1
       - run: tar -czvf sqlite-lembed-$(cat VERSION)-cli-cosmopolitan.tar.gz dist/sqlite3
