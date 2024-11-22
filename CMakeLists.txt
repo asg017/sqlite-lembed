@@ -22,8 +22,12 @@ FetchContent_MakeAvailable(sqlite_amalgamation)
 set(LLAMA_METAL OFF)
 set(LLAMA_STATIC ON)
 set(LLAMA_OPENMP OFF)
-set(LLAMA_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/llama.cpp")
-add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_BINARY_DIR}/llama.cpp)
+
+ExternalProject_Add(
+  "llama.cpp"
+  GIT_REPOSITORY git@github.com:ggerganov/llama.cpp.git
+  GIT_TAG        b3091
+)
 
 
 # sqlite-lembed loadable
