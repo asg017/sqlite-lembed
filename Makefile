@@ -105,8 +105,18 @@ $(MODELS_DIR): $(BUILD_DIR)
 $(MODELS_DIR)/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf: $(MODELS_DIR)
 	curl -L -o $@ https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf
 
-test-loadable: $(TARGET_LOADABLE) $(MODELS_DIR)/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf
-	$(PYTHON) -m pytest tests/test-loadable.py
+$(MODELS_DIR)/mxbai-embed-xsmall-v1-q8_0.gguf: $(MODELS_DIR)
+	curl -L -o $@ https://huggingface.co/mixedbread-ai/mxbai-embed-xsmall-v1/resolve/main/gguf/mxbai-embed-xsmall-v1-q8_0.gguf
+
+$(MODELS_DIR)/nomic-embed-text-v1.5.Q2_K.gguf: $(MODELS_DIR)
+	curl -L -o $@ https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q2_K.gguf
+
+models: $(MODELS_DIR)/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf $(MODELS_DIR)/mxbai-embed-xsmall-v1-q8_0.gguf $(MODELS_DIR)/nomic-embed-text-v1.5.Q2_K.gguf
+
+test-loadable: $(TARGET_LOADABLE) models
+	$(PYTHON) -m pytest tests/test-loadable.py -s -x -vv
+test-loadable-watch:
+	watchexec -w sqlite-lembed.c -w tests/test-loadable.py -w Makefile --clear  -- make test-loadable
 
 
 FORMAT_FILES=sqlite-lembed.c

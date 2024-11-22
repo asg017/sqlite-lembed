@@ -15,7 +15,6 @@ select lembed_version(), lembed_debug();
 INSERT INTO temp.lembed_models(name, model)
   select 'default', lembed_model_from_file('/Users/alex/projects/llama.cpp/all-MiniLM-L6-v2.F16.gguf');
 
-
 create table articles as
   select column1 as headline
   from (VALUES
@@ -46,6 +45,22 @@ create table articles as
     ('A meteorologist in Atlanta rescued a woman from Helene floodwaters on camera')
   );
 
+select
+  contents,
+  vec_to_json(vec_slice(embedding, 0, 8))
+from lembed_batch(
+  (
+    select json_group_array(
+      json_object(
+        'id', rowid,
+      'contents', headline
+      )
+    ) from articles
+  )
+);
+
+
+.exit
 select * from articles;
 
 .timer on

@@ -52,15 +52,16 @@ int tokenize(struct llama_model *model, const char *input, size_t input_length,
   return SQLITE_OK;
 }
 
+
 int embed_single(struct llama_context *context,
                  const char *input, size_t input_length,
                  /** Output float embedding */
                  float **out_embedding,
                  /** Output embedding length (n dimensions) */
-                 int *out_dimensions) {
+                 int *out_dimensions,
+                 char ** errmsg) {
   struct llama_model * model = (struct llama_model *) llama_get_model(context);
 
-  int n_batch = 512;
   int n_ctx_train = llama_n_ctx_train(model);
   int n_ctx = llama_n_ctx(context);
 
@@ -75,10 +76,16 @@ int embed_single(struct llama_context *context,
   int rc = tokenize(model, input, input_length, &token_count, &tokens);
   if(rc != SQLITE_OK) {
     // TODO error message
+    *errmsg = sqlite3_mprintf("Could not tokenize input.");
     return rc;
   }
 
-  struct llama_batch batch = llama_batch_init(n_batch, 0, 1);
+  if(token_count > n_ctx) {
+    *errmsg = sqlite3_mprintf("Input too long, provided %lld tokens, but model has context size of %lld", (int64_t) token_count, (int64_t) n_ctx);
+    return SQLITE_ERROR;
+  }
+
+  struct llama_batch batch = llama_batch_init(n_ctx, 0, 1);
 
   int seq_id = 0;
   // llama_batch_add(batch, tokens, 0, )
@@ -98,6 +105,7 @@ int embed_single(struct llama_context *context,
   if(rc != 0) {
     sqlite3_free(output_embedding);
     llama_batch_free(batch);
+    *errmsg = sqlite3_mprintf("Could not decode batch");
     return SQLITE_ERROR;
   }
 
@@ -111,6 +119,7 @@ int embed_single(struct llama_context *context,
   if(!source_embedding) {
     sqlite3_free(output_embedding);
     llama_batch_free(batch);
+    *errmsg = sqlite3_mprintf("Could not find embedding");
     return SQLITE_ERROR;
   }
 
@@ -161,22 +170,38 @@ static void lembed_model_size(sqlite3_context *context, int argc,
 
 static void lembed_model_options_(sqlite3_context *context, int argc,
                                   sqlite3_value **argv) {
-  assert(argc >= 0);
-  assert(argc % 2 == 0);
+
+  if(argc % 2 == 0) {
+    sqlite3_result_error(context, "an even number of arguments are required in lembed_model_options, key-value pairs", -1);
+    return;
+  }
   lembed_model_options *o = sqlite3_malloc(sizeof(lembed_model_options));
-  assert(o);
+  if(!o) {
+    sqlite3_result_error_nomem(context);
+    return;
+  }
   memset(o, 0, sizeof(*o));
 
   for (int i = 0; i < argc; i += 2) {
     sqlite3_value *key = argv[i];
     sqlite3_value *value = argv[i + 1];
-    assert(sqlite3_value_type(key) == SQLITE_TEXT);
+    if(sqlite3_value_type(key) != SQLITE_TEXT) {
+      char * errmsg = sqlite3_mprintf("Expected string key at index %d", i);
+      sqlite3_result_error(context, errmsg, -1);
+      sqlite3_free(errmsg);
+      sqlite3_free(o);
+      return;
+    }
     const char *k = (const char *)sqlite3_value_text(key);
     if (sqlite3_stricmp(k, "n_gpu_layers") == 0) {
       o->n_gpu_layers = sqlite3_value_int(value);
       o->defined[0] = 1;
     } else {
-      abort();
+      char * errmsg = sqlite3_mprintf("Unknown model option '%s'", k);
+      sqlite3_result_error(context, errmsg, -1);
+      sqlite3_free(errmsg);
+      sqlite3_free(o);
+      return;
     }
   }
   sqlite3_result_pointer(context, o, POINTER_NAME_MODEL_OPTIONS, sqlite3_free);
@@ -195,25 +220,43 @@ static char *POINTER_NAME_CONTEXT_OPTIONS = "lembed_context_options";
 
 static void lembed_context_options_(sqlite3_context *context, int argc,
                                     sqlite3_value **argv) {
-  assert(argc >= 0);
-  assert(argc % 2 == 0);
+  if(argc % 2 == 0) {
+    sqlite3_result_error(context, "an even number of arguments are required in lembed_context_options, key-value pairs", -1);
+    return;
+  }
   lembed_context_options *o = sqlite3_malloc(sizeof(lembed_context_options));
-  assert(o);
+  if(!o) {
+    sqlite3_result_error_nomem(context);
+    return;
+  }
   memset(o, 0, sizeof(*o));
 
   for (int i = 0; i < argc; i += 2) {
     sqlite3_value *key = argv[i];
     sqlite3_value *value = argv[i + 1];
-    assert(sqlite3_value_type(key) == SQLITE_TEXT);
+    if(sqlite3_value_type(key) != SQLITE_TEXT) {
+      char * errmsg = sqlite3_mprintf("Expected string value at index %d", i+1);
+      sqlite3_result_error(context, errmsg, -1);
+      sqlite3_free(errmsg);
+      return;
+    }
     const char *k = (const char *)sqlite3_value_text(key);
     if (sqlite3_stricmp("seed", k) == 0) {
       sqlite3_int64 v = sqlite3_value_int64(value);
-      assert(v > 0);
+      if(v < 0) {
+        sqlite3_result_error(context, "Expected positive value for seed", -1);
+        sqlite3_free(o);
+        return;
+      }
       o->seed = v;
       o->defined[0] = 1;
     } else if (sqlite3_stricmp("n_ctx", k) == 0) {
       sqlite3_int64 v = sqlite3_value_int64(value);
-      assert(v > 0);
+      if(v < 0) {
+        sqlite3_result_error(context, "Expected positive value for n_ctx", -1);
+        sqlite3_free(o);
+        return;
+      }
       o->n_ctx = v;
       o->defined[1] = 1;
     } else if (sqlite3_stricmp("rope_scaling_type", k) == 0) {
@@ -303,9 +346,10 @@ static void lembed(sqlite3_context *context, int argc, sqlite3_value **argv) {
 
   int dimensions;
   float *embedding;
-  rc = embed_single(ctx, input, input_len, &embedding, &dimensions);
+  char * errmsg;
+  rc = embed_single(ctx, input, input_len, &embedding, &dimensions, &errmsg);
   if(rc != SQLITE_OK) {
-    sqlite3_result_error(context, "Error generating embedding", -1);
+    sqlite3_result_error(context, sqlite3_mprintf("Error generating embedding: %z", errmsg), -1);
     return;
   }
   sqlite3_result_blob(context, embedding, sizeof(float) * dimensions, sqlite3_free);
@@ -314,16 +358,42 @@ static void lembed(sqlite3_context *context, int argc, sqlite3_value **argv) {
 
 static void lembed_tokenize_json(sqlite3_context *context, int argc,
                                  sqlite3_value **argv) {
+  int rc;
   struct llama_model *model;
-  int rc = api_model_from_name((struct Api *)sqlite3_user_data(context),
+  struct llama_context *ctx;
+  const char *input;
+  sqlite3_int64 input_len;
+
+  if(argc == 1) {
+    input = (const char *)sqlite3_value_text(argv[0]);
+    input_len = sqlite3_value_bytes(argv[0]);
+    rc = api_model_from_name((struct Api *)sqlite3_user_data(context), "default", strlen("default"), &model, &ctx);
+    if(rc != SQLITE_OK) {
+      sqlite3_result_error(context, "No default model has been registered yet with lembed_models", -1);
+      return;
+    }
+  }else {
+    input = (const char *)sqlite3_value_text(argv[1]);
+    input_len = sqlite3_value_bytes(argv[1]);
+    rc = api_model_from_name((struct Api *)sqlite3_user_data(context),
                                (const char *)sqlite3_value_text(argv[0]),
-                               sqlite3_value_bytes(argv[0]), &model, NULL);
-  const char *input = (const char *)sqlite3_value_text(argv[1]);
-  sqlite3_int64 input_len = sqlite3_value_bytes(argv[1]);
+                               sqlite3_value_bytes(argv[0]), &model, &ctx);
+
+    if(rc != SQLITE_OK) {
+      char * zSql = sqlite3_mprintf("Unknown model name '%s'. Was it registered with lembed_models?", sqlite3_value_text(argv[0]));
+      sqlite3_result_error(context, zSql, -1);
+      sqlite3_free(zSql);
+      return;
+    }
+  }
+
   int token_count;
   llama_token *tokens;
   rc = tokenize(model, input, input_len, &token_count, &tokens);
-  assert(rc == SQLITE_OK);
+  if(rc != SQLITE_OK) {
+    sqlite3_result_error(context, "Failed to tokenize input", -1);
+    return;
+  }
 
   sqlite3_str *s = sqlite3_str_new(NULL);
   sqlite3_str_appendchar(s, 1, '[');
@@ -335,8 +405,11 @@ static void lembed_tokenize_json(sqlite3_context *context, int argc,
   }
   sqlite3_str_appendchar(s, 1, ']');
   char *result = sqlite3_str_finish(s);
-  assert(result);
-  sqlite3_result_text(context, result, -1, sqlite3_free);
+  if(!result) {
+    sqlite3_result_error_nomem(context);
+  }else {
+    sqlite3_result_text(context, result, -1, sqlite3_free);
+  }
 }
 
 static void lembed_token_score(sqlite3_context *context, int argc,
@@ -375,6 +448,15 @@ static void ggml_test(sqlite3_context *context, int argc,
   sqlite3_result_int64(context, ggml_cpu_has_avx());
 }
 
+
+void vtab_set_error(sqlite3_vtab *pVTab, const char *zFormat, ...) {
+  va_list args;
+  sqlite3_free(pVTab->zErrMsg);
+  va_start(args, zFormat);
+  pVTab->zErrMsg = sqlite3_vmprintf(zFormat, args);
+  va_end(args);
+}
+
 #pragma region lembed_models() table function
 
 typedef struct lembed_models_vtab lembed_models_vtab;
@@ -399,9 +481,12 @@ static int lembed_modelsConnect(sqlite3 *db, void *pAux, int argc,
   }
 #define LEMBED_MODELS_NAME            0
 #define LEMBED_MODELS_MODEL           1
-#define LEMBED_MODELS_MODEL_OPTIONS   2
-#define LEMBED_MODELS_CONTEXT_OPTIONS 3
-  rc = sqlite3_declare_vtab(db, "CREATE TABLE x(name, model, model_options "
+#define LEMBED_MODELS_DIMENSIONS      2
+#define LEMBED_MODELS_N_CTX           3
+#define LEMBED_MODELS_POOLING_TYPE    4
+#define LEMBED_MODELS_MODEL_OPTIONS   5
+#define LEMBED_MODELS_CONTEXT_OPTIONS 6
+  rc = sqlite3_declare_vtab(db, "CREATE TABLE x(name, model, dimensions, n_ctx, pooling_type, model_options "
                                 "hidden, context_options hidden)");
   if (rc == SQLITE_OK) {
     pNew = sqlite3_malloc(sizeof(*pNew));
@@ -432,8 +517,13 @@ static int lembed_modelsUpdate(sqlite3_vtab *pVTab, int argc,
   // INSERT operation
   else if (argc > 1 && sqlite3_value_type(argv[0]) == SQLITE_NULL) {
     sqlite3_value **columnValues = &argv[2];
-    const char *key =
-        (const char *)sqlite3_value_text(columnValues[LEMBED_MODELS_NAME]);
+    const char *key;
+    if(sqlite3_value_type(columnValues[LEMBED_MODELS_NAME]) == SQLITE_NULL) {
+      key = "default";
+    }else {
+      key = (const char *)sqlite3_value_text(columnValues[LEMBED_MODELS_NAME]);
+    }
+
     int idx = -1;
     for (int i = 0; i < MAX_MODELS; i++) {
       if (!p->api->models[i].name) {
@@ -445,9 +535,18 @@ static int lembed_modelsUpdate(sqlite3_vtab *pVTab, int argc,
     if (idx < 0)
       abort();
 
-    const char *modelPath = sqlite3_value_pointer(
-        columnValues[LEMBED_MODELS_MODEL], POINTER_NAME_MODEL_PATH);
-    assert(modelPath);
+
+    const char *modelPath;
+    if(sqlite3_value_subtype(columnValues[LEMBED_MODELS_MODEL]) == POINTER_SUBTYPE) {
+      modelPath = sqlite3_value_pointer(columnValues[LEMBED_MODELS_MODEL], POINTER_NAME_MODEL_PATH);
+    }
+    else if (sqlite3_value_type(columnValues[LEMBED_MODELS_MODEL]) == SQLITE_TEXT) {
+      modelPath = sqlite3_value_text(columnValues[LEMBED_MODELS_MODEL]);
+    }
+    if(!modelPath) {
+      vtab_set_error(pVTab, "Could not resolve model path");
+      return SQLITE_ERROR;
+    }
 
     lembed_model_options *modelOptions = NULL;
     if (sqlite3_value_subtype(columnValues[LEMBED_MODELS_MODEL_OPTIONS]) ==
@@ -479,7 +578,7 @@ static int lembed_modelsUpdate(sqlite3_vtab *pVTab, int argc,
     struct llama_context *ctx;
     struct llama_context_params cparams = llama_context_default_params();
     cparams.embeddings = 1;
-    cparams.n_ubatch = cparams.n_batch = 512;
+    //cparams.n_ubatch = cparams.n_batch = 4096;
     if (contextOptions) {
       if (contextOptions->defined[0]) {
         cparams.seed = contextOptions->seed;
@@ -585,6 +684,34 @@ static int lembed_modelsColumn(sqlite3_vtab_cursor *cur,
     sqlite3_result_text(context, p->api->models[pCur->iRowid].name, -1,
                         SQLITE_TRANSIENT);
     break;
+  case LEMBED_MODELS_DIMENSIONS:
+    sqlite3_result_int64(context, llama_n_embd(p->api->models[pCur->iRowid].model));
+    break;
+  case LEMBED_MODELS_N_CTX:
+    sqlite3_result_int64(context, llama_n_ctx(p->api->models[pCur->iRowid].context));
+    break;
+  case LEMBED_MODELS_POOLING_TYPE: {
+      switch(llama_pooling_type(p->api->models[pCur->iRowid].context)) {
+        case LLAMA_POOLING_TYPE_NONE: {
+          sqlite3_result_text(context, "none", -1, SQLITE_STATIC);
+          break;
+        }
+        case LLAMA_POOLING_TYPE_MEAN: {
+          sqlite3_result_text(context, "mean", -1, SQLITE_STATIC);
+          break;
+        }
+        case LLAMA_POOLING_TYPE_CLS: {
+          sqlite3_result_text(context, "cls", -1, SQLITE_STATIC);
+          break;
+        }
+        case LLAMA_POOLING_TYPE_UNSPECIFIED: {
+          sqlite3_result_text(context, "unspecified", -1, SQLITE_STATIC);
+          break;
+        }
+      }
+      break;
+  }
+
   case LEMBED_MODELS_MODEL:
     sqlite3_result_pointer(context, p->api->models[pCur->iRowid].model,
                            POINTER_NAME_MODEL, NULL);
@@ -608,221 +735,6 @@ static sqlite3_module lembed_modelsModule = {
     /* xColumn     */ lembed_modelsColumn,
     /* xRowid      */ lembed_modelsRowid,
     /* xUpdate     */ lembed_modelsUpdate,
-    /* xBegin      */ 0,
-    /* xSync       */ 0,
-    /* xCommit     */ 0,
-    /* xRollback   */ 0,
-    /* xFindMethod */ 0,
-    /* xRename     */ 0,
-    /* xSavepoint  */ 0,
-    /* xRelease    */ 0,
-    /* xRollbackTo */ 0,
-    /* xShadowName */ 0};
-#pragma endregion
-
-#pragma region lembed_chunks() table function
-
-typedef struct lembed_chunks_vtab lembed_chunks_vtab;
-struct lembed_chunks_vtab {
-  sqlite3_vtab base;
-  struct Api *api;
-};
-
-typedef struct lembed_chunks_cursor lembed_chunks_cursor;
-struct lembed_chunks_cursor {
-  sqlite3_vtab_cursor base;
-  sqlite3_int64 iRowid;
-  int32_t chunks_count;
-  char **chunks;
-};
-
-static int lembed_chunksConnect(sqlite3 *db, void *pAux, int argc,
-                                const char *const *argv, sqlite3_vtab **ppVtab,
-                                char **pzErr) {
-  lembed_chunks_vtab *pNew;
-  int rc;
-#define lembed_chunks_CONTENTS 0
-#define lembed_chunks_TOKEN_COUNT 1
-#define lembed_chunks_SOURCE 2
-#define lembed_chunks_CHUNK_SIZE 3
-  rc = sqlite3_declare_vtab(db, "CREATE TABLE x(contents, token_count, source "
-                                "hidden, chunk_size hidden)");
-  if (rc == SQLITE_OK) {
-    pNew = sqlite3_malloc(sizeof(*pNew));
-    *ppVtab = (sqlite3_vtab *)pNew;
-    if (pNew == 0)
-      return SQLITE_NOMEM;
-    memset(pNew, 0, sizeof(*pNew));
-    pNew->api = pAux;
-  }
-  return rc;
-}
-
-static int lembed_chunksDisconnect(sqlite3_vtab *pVtab) {
-  lembed_chunks_vtab *p = (lembed_chunks_vtab *)pVtab;
-  sqlite3_free(p);
-  return SQLITE_OK;
-}
-
-static int lembed_chunksOpen(sqlite3_vtab *p, sqlite3_vtab_cursor **ppCursor) {
-  lembed_chunks_cursor *pCur;
-  pCur = sqlite3_malloc(sizeof(*pCur));
-  if (pCur == 0)
-    return SQLITE_NOMEM;
-  memset(pCur, 0, sizeof(*pCur));
-  *ppCursor = &pCur->base;
-  return SQLITE_OK;
-}
-
-static int lembed_chunksClose(sqlite3_vtab_cursor *cur) {
-  lembed_chunks_cursor *pCur = (lembed_chunks_cursor *)cur;
-  sqlite3_free(pCur);
-  return SQLITE_OK;
-}
-
-static int lembed_chunksBestIndex(sqlite3_vtab *pVTab,
-                                  sqlite3_index_info *pIdxInfo) {
-  int hasSource = 0;
-  int idxChunkSize = -1;
-  for (int i = 0; i < pIdxInfo->nConstraint; i++) {
-    const struct sqlite3_index_constraint *pCons = &pIdxInfo->aConstraint[i];
-    switch (pCons->iColumn) {
-    case lembed_chunks_SOURCE: {
-      if (!hasSource && !pCons->usable ||
-          pCons->op != SQLITE_INDEX_CONSTRAINT_EQ)
-        return SQLITE_CONSTRAINT;
-      hasSource = 1;
-      pIdxInfo->aConstraintUsage[i].argvIndex = 1;
-      pIdxInfo->aConstraintUsage[i].omit = 1;
-      break;
-    }
-    case lembed_chunks_CHUNK_SIZE: {
-    }
-    }
-  }
-  if (!hasSource) {
-    pVTab->zErrMsg = sqlite3_mprintf("source argument is required");
-    return SQLITE_ERROR;
-  }
-
-  pIdxInfo->idxNum = 1;
-  pIdxInfo->estimatedCost = (double)10;
-  pIdxInfo->estimatedRows = 10;
-  return SQLITE_OK;
-}
-
-static int lembed_chunksFilter(sqlite3_vtab_cursor *pVtabCursor, int idxNum,
-                               const char *idxStr, int argc,
-                               sqlite3_value **argv) {
-  lembed_chunks_cursor *pCur = (lembed_chunks_cursor *)pVtabCursor;
-  struct Api *api = ((lembed_chunks_vtab *)pVtabCursor->pVtab)->api;
-  struct llama_model *model;
-  int rc = api_model_from_name(api, (const char *)sqlite3_value_text(argv[0]),
-                               sqlite3_value_bytes(argv[0]), &model, NULL);
-  pCur->iRowid = 0;
-
-  char *input = (char *)sqlite3_value_text(argv[1]);
-  sqlite3_int64 input_len = sqlite3_value_bytes(argv[1]);
-  int32_t chunk_size = 5; // sqlite3_value_int(argv[1]);
-  int32_t overlap = 0;    // argc > 2 ? sqlite3_value_int(argv[2]) : 0;
-
-  int token_count;
-  llama_token *tokens;
-  rc = tokenize(model, input, input_len, &token_count, &tokens);
-  assert(rc == SQLITE_OK);
-
-  char *ptr = input;
-  int nchunks = ceil(1.0 * token_count / chunk_size);
-  pCur->chunks_count = nchunks;
-  pCur->chunks = sqlite3_malloc(sizeof(char *) * nchunks);
-  assert(pCur->chunks);
-
-  for (int i = 0; i < nchunks; i++) {
-    sqlite3_str *str_chunk = sqlite3_str_new(NULL);
-    assert(str_chunk);
-
-    for (int j = 0; j < chunk_size; j++) {
-      int32_t token = tokens[i * chunk_size + j];
-      int32_t piece_len_neg =
-          llama_token_to_piece(model, token, NULL, 0, false);
-      // printf("%d\n", piece_len_neg);
-      // assert(piece_len_neg < 0);
-      int32_t piece_len = abs(piece_len_neg);
-      // include prefix space?
-      // assert(piece_len > 1);
-      if (!piece_len)
-        continue;
-
-      char *piece = sqlite3_malloc(piece_len);
-      assert(piece);
-      llama_token_to_piece(model, token, piece, piece_len, false);
-      // printf("'%.*s' %d ", piece_len, piece, tokens[i*chunk_size + j]);
-
-      char *begin = ptr;
-      while (*ptr != piece[piece_len > 1 ? 1 : 0]) {
-        ptr++;
-      }
-      sqlite3_str_append(str_chunk, begin, ptr - begin + piece_len);
-      ptr += piece_len;
-
-      sqlite3_free(piece);
-    }
-
-    char *chunk = sqlite3_str_finish(str_chunk);
-    assert(chunk);
-    pCur->chunks[i] = chunk;
-  }
-
-  return SQLITE_OK;
-}
-
-static int lembed_chunksRowid(sqlite3_vtab_cursor *cur, sqlite_int64 *pRowid) {
-  lembed_chunks_cursor *pCur = (lembed_chunks_cursor *)cur;
-  *pRowid = pCur->iRowid;
-  return SQLITE_OK;
-}
-
-static int lembed_chunksNext(sqlite3_vtab_cursor *cur) {
-  lembed_chunks_cursor *pCur = (lembed_chunks_cursor *)cur;
-  pCur->iRowid++;
-  return SQLITE_OK;
-}
-
-static int lembed_chunksEof(sqlite3_vtab_cursor *cur) {
-  lembed_chunks_cursor *pCur = (lembed_chunks_cursor *)cur;
-  return pCur->iRowid >= pCur->chunks_count;
-}
-
-static int lembed_chunksColumn(sqlite3_vtab_cursor *cur,
-                               sqlite3_context *context, int i) {
-  lembed_chunks_cursor *pCur = (lembed_chunks_cursor *)cur;
-  switch (i) {
-  case lembed_chunks_CONTENTS:
-    sqlite3_result_text(context, pCur->chunks[pCur->iRowid], -1, SQLITE_STATIC);
-    break;
-  case lembed_chunks_SOURCE:
-    // TODO
-    sqlite3_result_null(context);
-    break;
-  }
-  return SQLITE_OK;
-}
-
-static sqlite3_module lembed_chunksModule = {
-    /* iVersion    */ 0,
-    /* xCreate     */ 0,
-    /* xConnect    */ lembed_chunksConnect,
-    /* xBestIndex  */ lembed_chunksBestIndex,
-    /* xDisconnect */ lembed_chunksDisconnect,
-    /* xDestroy    */ 0,
-    /* xOpen       */ lembed_chunksOpen,
-    /* xClose      */ lembed_chunksClose,
-    /* xFilter     */ lembed_chunksFilter,
-    /* xNext       */ lembed_chunksNext,
-    /* xEof        */ lembed_chunksEof,
-    /* xColumn     */ lembed_chunksColumn,
-    /* xRowid      */ lembed_chunksRowid,
-    /* xUpdate     */ 0,
     /* xBegin      */ 0,
     /* xSync       */ 0,
     /* xCommit     */ 0,
@@ -1019,7 +931,7 @@ static int lembed_batchBestIndex(
 int embed_batch(
   lembed_batch_cursor *pCur
   ) {
-  int32_t n_batch = 512;
+  uint32_t n_batch = llama_n_ctx(pCur->lctx);
   struct llama_batch batch = llama_batch_init(n_batch, 0, 1);
   int nprocessed = 0;
   int rc;
@@ -1060,8 +972,8 @@ int embed_batch(
     nprocessed += 1;
     char * zCopy = sqlite3_mprintf("%.*s", len, s);
     assert(zCopy);
-    assert(array_append(&pCur->contentsArray, &zCopy) == SQLITE_OK);
-    assert(array_append(&pCur->contentLengthsArray, &len) == SQLITE_OK);
+    array_append(&pCur->contentsArray, &zCopy) == SQLITE_OK;//assert();
+    array_append(&pCur->contentLengthsArray, &len) == SQLITE_OK;//assert();
     pCur->stmtRc = sqlite3_step(pCur->stmt);
   }
   if(nprocessed==0) {
@@ -1263,7 +1175,9 @@ __declspec(dllexport)
   llama_log_set(dummy_log, NULL);
 
   struct Api *a = sqlite3_malloc(sizeof(struct Api));
-  assert(a);
+  if(!a) {
+    return SQLITE_NOMEM;
+  }
   memset(a, 0, sizeof(*a));
 
   int rc = SQLITE_OK;
@@ -1298,6 +1212,7 @@ __declspec(dllexport)
       // clang-format off
     {"lembed",                 lembed,                    1},
     {"lembed",                 lembed,                    2},
+    {"lembed_tokenize_json",   lembed_tokenize_json,      1},
     {"lembed_tokenize_json",   lembed_tokenize_json,      2},
     {"lembed_token_score",     lembed_token_score,        2},
     {"lembed_token_to_piece",  lembed_token_to_piece_,    2},
@@ -1318,7 +1233,6 @@ __declspec(dllexport)
 
   sqlite3_create_function_v2(db, "_lembed_api", 0, 0, a, _noop, NULL, NULL, api_free);
 
-  sqlite3_create_module_v2(db, "lembed_chunks", &lembed_chunksModule, a, NULL);
   sqlite3_create_module_v2(db, "lembed_models", &lembed_modelsModule, a, NULL);
   sqlite3_create_module_v2(db, "lembed_batch",  &lembed_batchModule,  a, NULL);
   return SQLITE_OK;
