@@ -65,6 +65,7 @@ jobs:
           name: sqlite-lembed-windows-x86_64-extension
           path: dist/*.dll
   build-cosmopolitan:
+    if: false
     runs-on: macos-latest
     permissions:
       contents: write
