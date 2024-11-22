@@ -5,6 +5,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 include(FetchContent)
+include(ExternalProject)
 
 
 # sqlite amalgamation, for up-to-date headers and sqlite3 CLI
@@ -23,12 +24,12 @@ set(LLAMA_METAL OFF)
 set(LLAMA_STATIC ON)
 set(LLAMA_OPENMP OFF)
 
-ExternalProject_Add(
-  "llama.cpp"
+FetchContent_Declare(
+  llama_cpp
   GIT_REPOSITORY git@github.com:ggerganov/llama.cpp.git
   GIT_TAG        b3091
 )
-
+FetchContent_MakeAvailable(llama_cpp)
 
 # sqlite-lembed loadable
 add_library(sqlite_lembed SHARED sqlite-lembed.c)
