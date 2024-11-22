@@ -3,7 +3,7 @@ COMMIT=$(shell git rev-parse HEAD)
 VERSION=$(shell cat VERSION)
 DATE=$(shell date +'%FT%TZ%z')
 
-LLAMA_CMAKE_FLAGS=-DLLAMA_OPENMP=OFF
+LLAMA_CMAKE_FLAGS+=-DLLAMA_OPENMP=OFF
 ifndef CC
 CC=gcc
 endif
@@ -55,10 +55,11 @@ $(prefix):
 TARGET_LOADABLE=$(prefix)/lembed0.$(LOADABLE_EXTENSION)
 TARGET_STATIC=$(prefix)/libsqlite_lembed0.a
 TARGET_STATIC_H=$(prefix)/sqlite-lembed.h
+TARGET_CLI=$(prefix)/sqlite3
 
 loadable: $(TARGET_LOADABLE)
 static: $(TARGET_STATIC)
-
+cli: $(TARGET_CLI)
 
 BUILD_DIR=$(prefix)/.build
 
@@ -89,6 +90,11 @@ $(TARGET_STATIC): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
 	cmake --build $(BUILD_DIR) -t sqlite_lembed_static $(EXTRA_CMAKE_BUILD)
 	ls $(BUILD_DIR)
 	cp $(BUILT_LOADABLE_PATH) $@
+
+$(TARGET_CLI): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
+	cmake --build $(BUILD_DIR) -t sqlite3_cli $(EXTRA_CMAKE_BUILD)
+	ls $(BUILD_DIR)
+	cp $(BUILD_DIR)/sqlite3 $@
 
 
 sqlite-lembed.h: sqlite-lembed.h.tmpl VERSION

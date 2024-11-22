@@ -449,7 +449,7 @@ static void ggml_test(sqlite3_context *context, int argc,
 }
 
 
-void vtab_set_error(sqlite3_vtab *pVTab, const char *zFormat, ...) {
+void lembed_vtab_set_error(sqlite3_vtab *pVTab, const char *zFormat, ...) {
   va_list args;
   sqlite3_free(pVTab->zErrMsg);
   va_start(args, zFormat);
@@ -544,7 +544,7 @@ static int lembed_modelsUpdate(sqlite3_vtab *pVTab, int argc,
       modelPath = sqlite3_value_text(columnValues[LEMBED_MODELS_MODEL]);
     }
     if(!modelPath) {
-      vtab_set_error(pVTab, "Could not resolve model path");
+      lembed_vtab_set_error(pVTab, "Could not resolve model path");
       return SQLITE_ERROR;
     }
 
@@ -766,7 +766,7 @@ struct Array {
  * @return SQLITE_OK on success, error code on failure. Only error is
  * SQLITE_NOMEM
  */
-int array_init(struct Array *array, size_t element_size, size_t init_capacity) {
+int lembed_array_init(struct Array *array, size_t element_size, size_t init_capacity) {
   int sz = element_size * init_capacity;
   void *z = sqlite3_malloc(sz);
   if (!z) {
@@ -781,7 +781,7 @@ int array_init(struct Array *array, size_t element_size, size_t init_capacity) {
   return SQLITE_OK;
 }
 
-int array_append(struct Array *array, const void *element) {
+int lembed_array_append(struct Array *array, const void *element) {
   if (array->length == array->capacity) {
     size_t new_capacity = array->capacity * 2 + 100;
     void *z = sqlite3_realloc64(array->z, array->element_size * new_capacity);
@@ -798,7 +798,7 @@ int array_append(struct Array *array, const void *element) {
   return SQLITE_OK;
 }
 
-void array_cleanup(struct Array *array) {
+void lembed_array_cleanup(struct Array *array) {
   if (!array)
     return;
   array->element_size = 0;
@@ -899,8 +899,8 @@ static int lembed_batchBestIndex(
   sqlite3_vtab *pVTab,
   sqlite3_index_info *pIdxInfo
 ){
-
   int hasSource = 0;
+
   for (int i = 0; i < pIdxInfo->nConstraint; i++) {
     const struct sqlite3_index_constraint *pCons = &pIdxInfo->aConstraint[i];
     switch (pCons->iColumn) {
@@ -972,8 +972,8 @@ int embed_batch(
     nprocessed += 1;
     char * zCopy = sqlite3_mprintf("%.*s", len, s);
     assert(zCopy);
-    array_append(&pCur->contentsArray, &zCopy) == SQLITE_OK;//assert();
-    array_append(&pCur->contentLengthsArray, &len) == SQLITE_OK;//assert();
+    lembed_array_append(&pCur->contentsArray, &zCopy) == SQLITE_OK;//assert();
+    lembed_array_append(&pCur->contentLengthsArray, &len) == SQLITE_OK;//assert();
     pCur->stmtRc = sqlite3_step(pCur->stmt);
   }
   if(nprocessed==0) {
@@ -1029,15 +1029,15 @@ static int lembed_batchFilter(
   for(int i = 0; i < pCur->batchSize; i++) {
     sqlite3_free(((char **)pCur->contentsArray.z)[i]);
   }
-  array_cleanup(&pCur->contentsArray);
-  array_cleanup(&pCur->contentLengthsArray);
+  lembed_array_cleanup(&pCur->contentsArray);
+  lembed_array_cleanup(&pCur->contentLengthsArray);
   if(pCur->embeddings) {
     sqlite3_free(pCur->embeddings);
     pCur->embeddings = NULL;
   }
-  rc = array_init(&pCur->contentsArray, sizeof(char *), 32);
+  rc = lembed_array_init(&pCur->contentsArray, sizeof(char *), 32);
   assert(rc == SQLITE_OK);
-  rc = array_init(&pCur->contentLengthsArray, sizeof(int), 32);
+  rc = lembed_array_init(&pCur->contentLengthsArray, sizeof(int), 32);
   assert(rc == SQLITE_OK);
   pCur->iRowid = 0;
   pCur->eof = 0;
@@ -1062,15 +1062,15 @@ static int lembed_batchNext(sqlite3_vtab_cursor *cur){
     for(int i = 0; i < pCur->batchSize; i++) {
       sqlite3_free(((char **)pCur->contentsArray.z)[i]);
     }
-    array_cleanup(&pCur->contentsArray);
-    array_cleanup(&pCur->contentLengthsArray);
+    lembed_array_cleanup(&pCur->contentsArray);
+    lembed_array_cleanup(&pCur->contentLengthsArray);
     if(pCur->embeddings) {
       sqlite3_free(pCur->embeddings);
       pCur->embeddings = NULL;
     }
-    rc = array_init(&pCur->contentsArray, sizeof(char *), 32);
+    rc = lembed_array_init(&pCur->contentsArray, sizeof(char *), 32);
     assert(rc == SQLITE_OK);
-    rc = array_init(&pCur->contentLengthsArray, sizeof(int), 32);
+    rc = lembed_array_init(&pCur->contentLengthsArray, sizeof(int), 32);
     assert(rc == SQLITE_OK);
     rc = embed_batch(pCur);
     assert(rc == SQLITE_ROW || rc == SQLITE_DONE);

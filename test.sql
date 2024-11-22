@@ -13,10 +13,12 @@ select lembed_version(), lembed_debug();
 
 
 INSERT INTO temp.lembed_models(name, model)
-  select 'default', lembed_model_from_file('/Users/alex/projects/llama.cpp/all-MiniLM-L6-v2.F16.gguf');
+  select 'default', 'dist/.models/mxbai-embed-xsmall-v1-q8_0.gguf';
 
 create table articles as
-  select column1 as headline
+  select
+    column1 as headline,
+    random() % 100 as random
   from (VALUES
     ('Shohei Ohtani''s ex-interpreter pleads guilty to charges related to gambling and theft'),
     ('The jury has been selected in Hunter Biden''s gun trial'),
@@ -46,6 +48,7 @@ create table articles as
   );
 
 select
+  *,
   contents,
   vec_to_json(vec_slice(embedding, 0, 8))
 from lembed_batch(
@@ -53,7 +56,8 @@ from lembed_batch(
     select json_group_array(
       json_object(
         'id', rowid,
-      'contents', headline
+        'contents', headline,
+        'random', random
       )
     ) from articles
   )
