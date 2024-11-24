@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - batching
 permissions:
   contents: read
 jobs:
@@ -10,8 +11,6 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -25,8 +24,6 @@ jobs:
     runs-on: macos-12
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - run: make loadable
       - run: /usr/local/opt/python@3/libexec/bin/python -m pip install --break-system-packages pytest numpy; make test-loadable python=/usr/local/opt/python@3/libexec/bin/python
       - uses: actions/upload-artifact@v4
@@ -37,8 +34,6 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - run: make loadable
       - run: /opt/homebrew/opt/python3/libexec/bin/python -m pip install pytest numpy --break-system-packages; make test-loadable python=/opt/homebrew/opt/python3/libexec/bin/python
       - uses: actions/upload-artifact@v4
@@ -49,8 +44,6 @@ jobs:
     runs-on: windows-2019
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: ilammy/msvc-dev-cmd@v1
       - uses: actions/setup-python@v5
         with:
@@ -63,3 +56,26 @@ jobs:
         with:
           name: sqlite-lembed-windows-x86_64-extension
           path: dist/*.dll
+  build-cosmopolitan:
+    if: false
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          mkdir $HOME/cosmo
+          curl -L -o cosmocc-$COSMO_VERSION.zip https://github.com/jart/cosmopolitan/releases/download/$COSMO_VERSION/cosmocc-$COSMO_VERSION.zip
+          unzip cosmocc-$COSMO_VERSION.zip -d $HOME/cosmo
+        env:
+          COSMO_VERSION: "3.9.6"
+      - run: make sqlite-lembed.h
+      - run: make cli CC=$HOME/cosmo/bin/cosmocc CXX=$HOME/cosmo/bin/cosmoc++ AR=$HOME/cosmo/bin/cosmoar OMIT_SIMD=1
+      - run: tar -czvf sqlite-lembed-$(cat VERSION)-cli-cosmopolitan.tar.gz dist/sqlite3
+      - run: gh release upload ${{ github.ref_name }} sqlite-lembed-$(cat VERSION)-cli-cosmopolitan.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-lembed-cosmopolitan
+          path: dist/*

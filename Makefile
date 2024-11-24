@@ -3,7 +3,7 @@ COMMIT=$(shell git rev-parse HEAD)
 VERSION=$(shell cat VERSION)
 DATE=$(shell date +'%FT%TZ%z')
 
-LLAMA_CMAKE_FLAGS=-DLLAMA_OPENMP=OFF
+LLAMA_CMAKE_FLAGS+=-DLLAMA_OPENMP=OFF
 ifndef CC
 CC=gcc
 endif
@@ -55,10 +55,11 @@ $(prefix):
 TARGET_LOADABLE=$(prefix)/lembed0.$(LOADABLE_EXTENSION)
 TARGET_STATIC=$(prefix)/libsqlite_lembed0.a
 TARGET_STATIC_H=$(prefix)/sqlite-lembed.h
+TARGET_CLI=$(prefix)/sqlite3
 
 loadable: $(TARGET_LOADABLE)
 static: $(TARGET_STATIC)
-
+cli: $(TARGET_CLI)
 
 BUILD_DIR=$(prefix)/.build
 
@@ -85,6 +86,16 @@ $(TARGET_LOADABLE): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
 	ls $(BUILD_DIR)
 	cp $(BUILT_LOADABLE_PATH) $@
 
+$(TARGET_STATIC): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
+	cmake --build $(BUILD_DIR) -t sqlite_lembed_static $(EXTRA_CMAKE_BUILD)
+	ls $(BUILD_DIR)
+	cp $(BUILT_LOADABLE_PATH) $@
+
+$(TARGET_CLI): sqlite-lembed.c sqlite-lembed.h $(BUILD_DIR) $(prefix)
+	cmake --build $(BUILD_DIR) -t sqlite3_cli $(EXTRA_CMAKE_BUILD)
+	ls $(BUILD_DIR)
+	cp $(BUILD_DIR)/sqlite3 $@
+
 
 sqlite-lembed.h: sqlite-lembed.h.tmpl VERSION
 	VERSION=$(shell cat VERSION) \
@@ -100,8 +111,18 @@ $(MODELS_DIR): $(BUILD_DIR)
 $(MODELS_DIR)/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf: $(MODELS_DIR)
 	curl -L -o $@ https://huggingface.co/asg017/sqlite-lembed-model-examples/resolve/main/all-MiniLM-L6-v2/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf
 
-test-loadable: $(TARGET_LOADABLE) $(MODELS_DIR)/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf
-	$(PYTHON) -m pytest tests/test-loadable.py
+$(MODELS_DIR)/mxbai-embed-xsmall-v1-q8_0.gguf: $(MODELS_DIR)
+	curl -L -o $@ https://huggingface.co/mixedbread-ai/mxbai-embed-xsmall-v1/resolve/main/gguf/mxbai-embed-xsmall-v1-q8_0.gguf
+
+$(MODELS_DIR)/nomic-embed-text-v1.5.Q2_K.gguf: $(MODELS_DIR)
+	curl -L -o $@ https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q2_K.gguf
+
+models: $(MODELS_DIR)/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf $(MODELS_DIR)/mxbai-embed-xsmall-v1-q8_0.gguf $(MODELS_DIR)/nomic-embed-text-v1.5.Q2_K.gguf
+
+test-loadable: $(TARGET_LOADABLE) models
+	$(PYTHON) -m pytest tests/test-loadable.py -s -x -vv
+test-loadable-watch:
+	watchexec -w sqlite-lembed.c -w tests/test-loadable.py -w Makefile --clear  -- make test-loadable
 
 
 FORMAT_FILES=sqlite-lembed.c

@@ -8,6 +8,8 @@ from contextlib import contextmanager
 
 EXT_PATH = "./dist/lembed0"
 MODEL1_PATH = "./dist/.models/all-MiniLM-L6-v2.e4ce9877.q8_0.gguf"
+MODEL2_PATH = "./dist/.models/mxbai-embed-xsmall-v1-q8_0.gguf"
+MODEL3_PATH = "./dist/.models/nomic-embed-text-v1.5.Q2_K.gguf"
 
 
 def connect(ext, path=":memory:", extra_entrypoint=None):
@@ -71,10 +73,11 @@ FUNCTIONS = [
     "lembed_token_score",
     "lembed_token_to_piece",
     "lembed_tokenize_json",
+    "lembed_tokenize_json",
     "lembed_version",
 ]
 MODULES = [
-    "lembed_chunks",
+    "lembed_batch",
     "lembed_models",
 ]
 
@@ -110,13 +113,14 @@ def test_lembed_debug():
 
 
 def test_lembed():
+    lembed = lambda *args: db.execute(
+        "select lembed({})".format(spread_args(args)), args
+    ).fetchone()[0]
+
     db.execute(
         "insert into temp.lembed_models(name, model) values (?, lembed_model_from_file(?))",
         ["aaa", MODEL1_PATH],
     )
-    lembed = lambda *args: db.execute(
-        "select lembed({})".format(spread_args(args)), args
-    ).fetchone()[0]
     a = lembed("aaa", "alex garcia")
     assert len(a) == (384 * 4)
     assert struct.unpack("1f", a[0:4])[0] == pytest.approx(
@@ -127,6 +131,36 @@ def test_lembed():
         "Unknown model name 'aaaaaaaaa'. Was it registered with lembed_models?"
     ):
         lembed("aaaaaaaaa", "alex garcia")
+
+def test_lembed_multiple():
+    db = connect(EXT_PATH)
+    lembed = lambda *args: db.execute(
+        "select lembed({})".format(spread_args(args)), args
+    ).fetchone()[0]
+
+    db.execute(
+        "insert into temp.lembed_models(name, model) values (?, ?), (?, ?), (?, ?)",
+        ["aaa", MODEL1_PATH, "bbb", MODEL2_PATH, "ccc", MODEL3_PATH],
+    )
+    a = lembed("aaa", "alex garcia")
+    b = lembed("bbb", "alex garcia")
+    c = lembed("ccc", "alex garcia")
+    assert len(a) == (384 * 4)
+    assert len(b) == (384 * 4)
+    assert len(c) == (768 * 4)
+
+    assert execute_all(db, "select * from lembed_models") == [
+        {"name": "aaa", "model": None, "dimensions": 384, "n_ctx": 512, "pooling_type": "none"},
+        {"name": "bbb", "model": None, "dimensions": 384, "n_ctx": 512, "pooling_type": "mean"},
+        {"name": "ccc", "model": None, "dimensions": 768, "n_ctx": 512, "pooling_type": "mean"},
+    ]
+
+
+def test_lembed_default():
+    db = connect(EXT_PATH)
+    lembed = lambda *args: db.execute(
+        "select lembed({})".format(spread_args(args)), args
+    ).fetchone()[0]
 
     with _raises("No default model has been registered yet with lembed_models"):
         lembed("alex garcia")
@@ -141,6 +175,68 @@ def test_lembed():
         -0.09205757826566696, rel=1e-2
     )
 
+    # test 2: try with NULL name
+    db = connect(EXT_PATH)
+    lembed = lambda *args: db.execute(
+        "select lembed({})".format(spread_args(args)), args
+    ).fetchone()[0]
+
+    with _raises("No default model has been registered yet with lembed_models"):
+        lembed("alex garcia")
+
+    db.execute(
+        "insert into temp.lembed_models(model) values (lembed_model_from_file(?))",
+        [MODEL1_PATH],
+    )
+    a = lembed("alex garcia")
+    assert len(a) == (384 * 4)
+    assert struct.unpack("1f", a[0:4])[0] == pytest.approx(
+        -0.09205757826566696, rel=1e-2
+    )
+
+    # test 3: try text path to model
+    db = connect(EXT_PATH)
+    lembed = lambda *args: db.execute(
+        "select lembed({})".format(spread_args(args)), args
+    ).fetchone()[0]
+
+    with _raises("No default model has been registered yet with lembed_models"):
+        lembed("alex garcia")
+
+    db.execute(
+        "insert into temp.lembed_models(model) values (?)",
+        [MODEL1_PATH],
+    )
+    a = lembed("alex garcia")
+    assert len(a) == (384 * 4)
+    assert struct.unpack("1f", a[0:4])[0] == pytest.approx(
+        -0.09205757826566696, rel=1e-2
+    )
+
+def test_stress_mxbai_xsmall():
+    db = connect(EXT_PATH)
+    lembed = lambda *args: db.execute(
+        "select lembed({})".format(spread_args(args)), args
+    ).fetchone()[0]
+
+    with _raises("No default model has been registered yet with lembed_models"):
+        lembed("alex garcia")
+
+    db.execute(
+        "insert into temp.lembed_models(name, model) values (?, lembed_model_from_file(?))",
+        ["default", MODEL1_PATH],
+    )
+    assert len(lembed("a " * 256)) == 384*4
+    #print(db.execute('select lembed_tokenize_json(\'a a a a\') as x').fetchone()["x"])
+
+    # including start and end token, this is 512 tokens, max ctx size for all-mini
+    lembed("a " * (510))
+
+    with _raises("Error generating embedding: Input too long, provided 513 tokens, but model has context size of 512"):
+      lembed("a " * (511))
+
+    with _raises("Error generating embedding: Input too long, provided 4098 tokens, but model has context size of 512"):
+      lembed("a " * (4096))
 
 @pytest.mark.skip(reason="TODO")
 def test__lembed_api():
@@ -203,11 +299,10 @@ def test_lembed_token_to_piece():
     ).fetchone()[0]
     pass
 
-
 @pytest.mark.skip(reason="TODO")
-def test_lembed_chunks():
-    lembed_chunks = lambda *args: db.execute(
-        "select * from lembed_chunks()", args
+def test_lembed_batch():
+    lembed_batch = lambda *args: db.execute(
+        "select * from lembed_batch()", args
     ).fetchone()[0]
     pass
 
