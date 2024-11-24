@@ -13,6 +13,8 @@ SQLITE_EXTENSION_INIT1
 #define UNUSED_PARAMETER(X) (void)(X)
 #endif
 
+#define SQLITE_VEC_FLOAT32_SUBTYPE 223
+
 void dummy_log(enum ggml_log_level level, const char *text, void *user_data) {}
 
 static void normalize(float *vec, float *out, int n) {
@@ -158,15 +160,6 @@ struct lembed_model_options {
 };
 static char *POINTER_NAME_MODEL = "lembed_model";
 static char *POINTER_NAME_MODEL_OPTIONS = "lembed_model_options";
-
-static void lembed_model_size(sqlite3_context *context, int argc,
-                              sqlite3_value **argv) {
-  struct llama_model *model =
-      sqlite3_value_pointer(argv[0], POINTER_NAME_MODEL);
-  if (!model)
-    return;
-  sqlite3_result_int64(context, llama_model_size(model));
-}
 
 static void lembed_model_options_(sqlite3_context *context, int argc,
                                   sqlite3_value **argv) {
@@ -353,7 +346,7 @@ static void lembed(sqlite3_context *context, int argc, sqlite3_value **argv) {
     return;
   }
   sqlite3_result_blob(context, embedding, sizeof(float) * dimensions, sqlite3_free);
-  sqlite3_result_subtype(context, 223); // TODO define
+  sqlite3_result_subtype(context, SQLITE_VEC_FLOAT32_SUBTYPE);
 }
 
 static void lembed_tokenize_json(sqlite3_context *context, int argc,
@@ -481,12 +474,13 @@ static int lembed_modelsConnect(sqlite3 *db, void *pAux, int argc,
   }
 #define LEMBED_MODELS_NAME            0
 #define LEMBED_MODELS_MODEL           1
-#define LEMBED_MODELS_DIMENSIONS      2
-#define LEMBED_MODELS_N_CTX           3
-#define LEMBED_MODELS_POOLING_TYPE    4
-#define LEMBED_MODELS_MODEL_OPTIONS   5
-#define LEMBED_MODELS_CONTEXT_OPTIONS 6
-  rc = sqlite3_declare_vtab(db, "CREATE TABLE x(name, model, dimensions, n_ctx, pooling_type, model_options "
+#define LEMBED_MODELS_SIZE            2
+#define LEMBED_MODELS_DIMENSIONS      3
+#define LEMBED_MODELS_N_CTX           4
+#define LEMBED_MODELS_POOLING_TYPE    5
+#define LEMBED_MODELS_MODEL_OPTIONS   6
+#define LEMBED_MODELS_CONTEXT_OPTIONS 7
+  rc = sqlite3_declare_vtab(db, "CREATE TABLE x(name, model, size, dimensions, n_ctx, pooling_type, model_options "
                                 "hidden, context_options hidden)");
   if (rc == SQLITE_OK) {
     pNew = sqlite3_malloc(sizeof(*pNew));
@@ -683,6 +677,9 @@ static int lembed_modelsColumn(sqlite3_vtab_cursor *cur,
   case LEMBED_MODELS_NAME:
     sqlite3_result_text(context, p->api->models[pCur->iRowid].name, -1,
                         SQLITE_TRANSIENT);
+    break;
+  case LEMBED_MODELS_SIZE:
+    sqlite3_result_int64(context, llama_model_size(p->api->models[pCur->iRowid].model));
     break;
   case LEMBED_MODELS_DIMENSIONS:
     sqlite3_result_int64(context, llama_n_embd(p->api->models[pCur->iRowid].model));
@@ -1107,7 +1104,7 @@ static int lembed_batchColumn(
         sizeof(float) * pCur->dimensions,
         SQLITE_TRANSIENT
       );
-      sqlite3_result_subtype(context, 223); // TODO define
+      sqlite3_result_subtype(context, SQLITE_VEC_FLOAT32_SUBTYPE);
       break;
     default:
       sqlite3_result_null(context);
@@ -1216,7 +1213,6 @@ __declspec(dllexport)
     {"lembed_tokenize_json",   lembed_tokenize_json,      2},
     {"lembed_token_score",     lembed_token_score,        2},
     {"lembed_token_to_piece",  lembed_token_to_piece_,    2},
-    {"lembed_model_size",      lembed_model_size,         1},
     {"lembed_model_from_file", lembed_model_from_file,    1},
     {"lembed_model_options",   lembed_model_options_,     -1},
     {"lembed_context_options", lembed_context_options_,   -1},
